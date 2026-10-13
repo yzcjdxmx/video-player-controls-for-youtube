@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue.svg)](extension/manifest.json)
 [![No network](https://img.shields.io/badge/network-none-success.svg)](PRIVACY.md)
-[![Tests](https://img.shields.io/badge/tests-160%20passing-brightgreen.svg)](#-测试)
+[![Tests](https://img.shields.io/badge/tests-217%20passing-brightgreen.svg)](#-测试)
 
 ---
 
@@ -24,6 +24,7 @@
 | `[` / `]` | 上一集 / 下一集 |
 | **画面下沿常驻进度条** | 鼠标移开、原生控制条淡出后**它依然在**;两端有刻度、当前进度有游标;颜色 / 高度 / 开关 / 形状(竖条・圆点・小三角・实心方块・空心方块)全部可配 |
 | **默认清晰度** | 保持自动 / **最高可用** / 指定 1080p、720p… 每个视频自动套用 |
+| **💾 备份与恢复** | 把 23 项设置**导出成一个 .json**,在另一台机器/另一份扩展上**一键恢复** —— 换电脑、重装浏览器、从开发者模式版换到商店版,都不用重设 |
 | 中央浮层 | B 站风格提示:`▶▶ 3.0X`(金色)、音量、跳转、帧步进 |
 
 YouTube 原生的空格暂停、`↑↓` 音量、`M` 静音、`F` 全屏、`0–9` 跳百分比、单击暂停、双击全屏**全部照旧**,本扩展不重复接管。
@@ -39,6 +40,8 @@ Microsoft Edge 加载项商店:<https://microsoftedge.microsoft.com/addons/detai
 3. 打开 **开发者模式 / Developer mode** → 点 **加载解压缩的扩展 / Load unpacked**
 4. 选中本仓库里的 **`extension`** 这一层目录(选外层会报 *Manifest file is missing or unreadable*)
 
+> ⚠️ 商店版和开发者模式版是**两个不同的扩展 ID**,同一台浏览器里**只留一份**(否则按键会被处理两次、进度条画两条)。
+> 换了版本想带走设置:在设置页**导出备份**,在新那份上**导入**即可。
 > 改了代码之后:**先在扩展页点卡片上的 🔄 重新加载,再刷新 YouTube 页面**(顺序不能反)。
 
 ## ⚙️ 设置
@@ -51,37 +54,48 @@ Microsoft Edge 加载项商店:<https://microsoftedge.microsoft.com/addons/detai
 - **刻度 / 游标**:两个**独立开关** + 各自形状 + 装饰高度(8 px)、悬停时是否让位
 - **清晰度**:保持默认(自动)/ 最高可用 / 144p–2160p
 - **总开关**:整个扩展、长按 `←` 也倍速、中央浮层、画面滚轮音量、`[` `]` 切集
+- **💾 备份与恢复**:导出设置 / 导入设置(见下)
+
+### 💾 备份与恢复怎么用
+
+1. 旧的那份:设置页最下面 →「**导出备份文件**」→ 下载一个 `.json`
+2. 新的那份:→「**选择备份文件…**」→ 选那个 `.json` → 23 项一次恢复
+
+导入很保守:只恢复「扩展认得的、值也合法的」项 —— 类型不对、颜色格式不是 `#rrggbb`、数值超出合理范围、文件里多出来的键,一律**跳过并列出来**,不会把脏数据写进设置。这套校验是纯函数(`extension/backup.js`),有 **48 项**专门的测试盯着。
 
 ## 🔒 隐私
 
 **不采集任何数据、不发出任何网络请求、只用 `storage` 一个权限**(且只用来保存你自己的设置)。
-详见 [PRIVACY.md](PRIVACY.md)。代码全部在此仓库,欢迎审阅。
+备份文件也**只落在你自己的硬盘上**,扩展不会上传它。详见 [PRIVACY.md](PRIVACY.md)。代码全部在此仓库,欢迎审阅。
 
 ## 🗂 仓库结构
 
 ```
 extension/             ← 扩展本体(加载/打包的就是这一层)
-├─ manifest.json       ← MV3:隔离世界注入 content/progress/quality + css;主世界注入 quality-main
+├─ manifest.json       ← MV3:隔离世界注入 content/progress/quality + css;主世界注入 quality-main;名字与描述走 i18n
+├─ _locales/           ← 多语言:en(默认) + zh_CN —— 商店靠它识别可用语言
 ├─ content.js          ← 按键 / 倍速(隔离世界)
 ├─ progress.js         ← 常驻进度条(隔离世界)
 ├─ quality.js          ← 默认清晰度:读设置 + postMessage(隔离世界)
 ├─ quality-main.js     ← 默认清晰度:调播放器接口(★ 主世界 world:"MAIN")
+├─ backup.js           ← 设置备份/恢复的纯逻辑(不碰 chrome API 与 DOM,所以能自测)
 ├─ background.js       ← 点工具栏图标 → 打开设置页
 ├─ content.css         ← 浮层 + 进度条样式
-├─ options.html / .js  ← 设置页
-└─ icons/              ← 16 / 32 / 48 / 128 图标
+├─ options.html / .js  ← 设置页(含备份与恢复)
+└─ icons/              ← 16 / 32 / 48 / 128 / 300 图标
 test/                  ← 无依赖的浏览器自测页(直接打开即跑)
 ```
 
 ## ✅ 测试
 
-三套自测页,共 **160 项断言**,不需要 Node、不需要任何依赖 —— 打开 `test/` 里的 html 就会自动跑完并打印 `PASS` / `FAIL`:
+四套自测页,共 **217 项断言**,不需要 Node、不需要任何依赖 —— 打开 `test/` 里的 html 就会自动跑完并打印 `PASS` / `FAIL`:
 
 | 测试页 | 项数 | 覆盖 |
 |---|---|---|
-| `test/smoke.html` | 63 | 按键/倍速/逐帧全部行为 + manifest 校验(权限、注入项、图标、商店要求) |
+| `test/smoke.html` | 72 | 按键/倍速/逐帧/跳转全部行为 + manifest 校验(权限、注入项、图标、商店要求)+ i18n 语言包校验(描述 ≤132 字符等) |
 | `test/smoke-progress.html` | 70 | 进度条:两个开关独立、五种形状、高度、0%/100% 贴边、滚动同帧落位、全屏分支 |
 | `test/smoke-quality.html` | 27 | 默认清晰度:跨世界链路、已在目标档位就跳过、档位不存在时退让、接口缺失安全收场 |
+| `test/smoke-backup.html` | 48 | 备份/恢复:往返一致、坏 JSON、类型错、超范围夹紧、非法颜色、枚举白名单、原型污染防护、扁平格式兼容 |
 
 `test/bench-cpu.html` 是可复现的性能基准:播放中约 **0.33% 单核**(保守上界),空闲时零开销。
 

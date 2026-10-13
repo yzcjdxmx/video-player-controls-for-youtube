@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>自测:设置备份 / 恢复(纯逻辑)</title>
+<style>
+  body { margin: 0; padding: 16px; background: #0f0f0f; color: #e8e8e8;
+         font: 13px/1.55 "Cascadia Mono", Consolas, "Microsoft YaHei", monospace; }
+  h1 { font-size: 15px; margin: 0 0 4px; }
+  .sub { color: #9a9a9a; margin-bottom: 12px; }
+  pre { white-space: pre-wrap; margin: 0; }
+  .running { color: #ffd75e; }
+</style>
+</head>
+<body>
+<h1>自测:设置备份 / 恢复(backup.js,纯逻辑,不需要 chrome API)</h1>
+<div class="sub">加载的是扩展真正在用的 ../extension/backup.js</div>
+<pre id="out"><span class="running">running…</span></pre>
+
+<script src="../extension/backup.js"></script>
+<script>
+const out = document.getElementById('out');
+let pass = 0, fail = 0;
+const lines = [];
+function check(name, cond, extra) {
+  const ok = !!cond;
+  ok ? pass++ : fail++;
+  lines.push((ok ? 'PASS' : 'FAIL') + ' | ' + name + (extra !== undefined ? ' | ' + extra : ''));
+  out.textContent = lines.join('\n');
+}
+const B = window.BiliBackup;
+
+// 和设置页一致的默认值(测试里独立写一份,免得 options.js 的 DOM 依赖把测试拖下水)
+const DEFAULTS = {
+  enabled: true, holdSpeed: 3, holdThreshold: 250, longPressLeft: true, shortSeek: 5,
+  overlay: true, wheelVolume: true, bracketNav: true, frameStep: true, frameStepFps: 30,
+  frameStepPauses: true, ctrlArrowSeek: true, skipSeconds: 10, progressBar: true,
+  progressBarHeight: 3, progressBarColor: '#ff0000', progressBarHideOnHover: false,
+  progressBarCaps: true, progressBarCapShape: 'line', progressBarKnob: true,
+  progressBarKnobShape: 'dot', progressBarDecorSize: 8, videoQuality: 'auto'
+};
+const KEYS = Object.keys(DEFAULTS);
+function roundTrip(cfg) {
+  return B.parseBackup(JSON.stringify(B.makeBackup(cfg, '1.5.0', '2026-10-13T00:00:00.000Z')), DEFAULTS);
+}
+
+(async function run() {
+  /* ---------- 1. 导出 ---------- */
+  check('B1 backup.js 挂到 window.BiliBackup', !!B && typeof B.makeBackup === 'function' && typeof B.parseBackup === 'function');
+  const bk = B.makeBackup(DEFAULTS, '1.5.0', '2026-10-13T00:00:00.000Z');
+  check('B2 导出带元字段 _app', bk._app === 'video-player-controls-for-youtube', bk._app);
+  check('B3 导出带 _version', bk._version === '1.5.0');
+  check('B4 导出带 ISO 时间戳', /^\d{4}-\d{2}-\d{2}T/.test(bk._exportedAt), bk._exportedAt);
+  check('B5 导出的键数 = ' + KEYS.length, Object.keys(bk.data).length === KEYS.length, Object.keys(bk.data).length);
+  check('B6 导出的是副本,不改动入参', (function () {
+    const src = { enabled: true, holdSpeed: 3 };
+    const before = JSON.stringify(src);
+    B.makeBackup(src, 'x', 'y');
+    return JSON.stringify(src) === before;
+  })());
+  check('B7 导出的对象能 JSON.stringify(可直接写文件)', typeof JSON.stringify(bk) === 'string' && JSON.stringify(bk).length > 100);
+
+  /* ---------- 2. 往返一致 ---------- */
+  const rt = roundTrip(DEFAULTS);
+  check('B8 往返解析成功', rt.ok === true, rt.ok ? '' : rt.error);
+  check('B9 往返后 23 项全部还原', Object.keys(rt.settings).length === KEYS.length, Object.keys(rt.settings).length);
+  check('B10 往返后每项值与原值一致', KEYS.every((k) => rt.settings[k] === DEFAULTS[k]));
+  check('B11 往返后没有跳过项', rt.skipped.length === 0, JSON.stringify(rt.skipped));
+  check('B12 往返后没有夹紧项', rt.adjusted.length === 0, JSON.stringify(rt.adjusted));
+  check('B13 元信息被读出来', rt.meta.app === 'video-player-controls-for-youtube' && rt.meta.version === '1.5.0');
+
+  /* ---------- 3. 坏输入 ---------- */
+  check('B14 非 JSON 文本被拒绝', B.parseBackup('这不是 json', DEFAULTS).ok === false);
+  check('B15 非 JSON 的报错里带原因', /JSON/.test(B.parseBackup('{坏}', DEFAULTS).error || ''));
+  check('B16 空字符串被拒绝', B.parseBackup('', DEFAULTS).ok === false);
+  check('B17 数组被拒绝', B.parseBackup('[1,2,3]', DEFAULTS).ok === false);
+  check('B18 纯数字被拒绝', B.parseBackup('42', DEFAULTS).ok === false);
+  check('B19 null 被拒绝', B.parseBackup('null', DEFAULTS).ok === false);
+  check('B20 别的扩展的备份被拒绝', B.parseBackup(JSON.stringify({ _app: 'some-other-ext', data: {} }), DEFAULTS).ok === false);
+
+  /* ---------- 4. 脏数据:跳过 + 记账 ---------- */
+  const dirty = {
+    _app: 'video-player-controls-for-youtube', _version: '1.5.0', _exportedAt: 'x',
+    data: {
+      enabled: 'true',                    // 类型错(字符串冒充布尔)
+      holdSpeed: 'fast',                  // 类型错
+      progressBarColor: 'red',            // 颜色格式错
+      progressBarCapShape: 'hexagon',     // 枚举外
+      videoQuality: '8k',                 // 分辨率格式错
+      holdThreshold: 250,                 // 正常
+      totallyUnknownKey: 123              // 扩展里没有
+    }
+  };
+  const d = B.parseBackup(JSON.stringify(dirty), DEFAULTS);
+  check('B21 脏文件仍算解析成功(部分恢复)', d.ok === true);
+  check('B22 只恢复了合法的那 1 项', Object.keys(d.settings).length === 1 && d.settings.holdThreshold === 250, JSON.stringify(d.settings));
+  check('B23 跳过了 6 项(5 个坏值 + 1 个未知键)', d.skipped.length === 6, JSON.stringify(d.skipped));
+  check('B24 未知键的记账文案可读', d.skipped.some((s) => s.indexOf('totallyUnknownKey') === 0 && s.indexOf('没有这个设置') > 0));
+  check('B25 坏值不会出现在结果里', !('enabled' in d.settings) && !('progressBarColor' in d.settings) && !('videoQuality' in d.settings));
+
+  /* ---------- 5. 数值夹紧 ---------- */
+  const clamp = B.parseBackup(JSON.stringify({ data: {
+    holdSpeed: 999, progressBarDecorSize: 0, progressBarHeight: 100, frameStepFps: -5, shortSeek: 5
+  } }), DEFAULTS);
+  check('B26 超大值夹到上限(holdSpeed 999 → 16)', clamp.settings.holdSpeed === 16, clamp.settings.holdSpeed);
+  check('B27 过小值夹到下限(decorSize 0 → 1)', clamp.settings.progressBarDecorSize === 1, clamp.settings.progressBarDecorSize);
+  check('B28 过大高度夹到 40', clamp.settings.progressBarHeight === 40, clamp.settings.progressBarHeight);
+  check('B29 负数帧率夹到 1', clamp.settings.frameStepFps === 1, clamp.settings.frameStepFps);
+  check('B30 合法值不动(shortSeek=5)', clamp.settings.shortSeek === 5);
+  check('B31 夹紧项被记账(4 项)', clamp.adjusted.length === 4, JSON.stringify(clamp.adjusted));
+
+  /* ---------- 6. 非法数字 / 颜色 / 枚举 ---------- */
+  check('B32 NaN 被跳过', !('holdSpeed' in B.parseBackup('{"data":{"holdSpeed":null}}', DEFAULTS).settings));
+  check('B33 字符串数字被跳过(不偷偷转换)', !('holdSpeed' in B.parseBackup('{"data":{"holdSpeed":"3"}}', DEFAULTS).settings));
+  const cols = B.parseBackup('{"data":{"progressBarColor":"#AABBCC"}}', DEFAULTS).settings;
+  check('B34 合法颜色 #AABBCC 被接受', cols.progressBarColor === '#AABBCC');
+  check('B35 三位简写 #f00 被拒(要求 #rrggbb)', !('progressBarColor' in B.parseBackup('{"data":{"progressBarColor":"#f00"}}', DEFAULTS).settings));
+  ['line', 'dot', 'triangle', 'square', 'squareHollow'].forEach((s, i) => {
+    check('B' + (36 + i) + ' 枚举白名单接受 ' + s,
+      B.parseBackup('{"data":{"progressBarKnobShape":"' + s + '"}}', DEFAULTS).settings.progressBarKnobShape === s);
+  });
+  check('B41 auto / highest / 1080 都被接受', ['auto', 'highest', '1080'].every((q) =>
+    B.parseBackup('{"data":{"videoQuality":"' + q + '"}}', DEFAULTS).settings.videoQuality === q));
+
+  /* ---------- 7. 扁平格式 / 空文件 / 原型污染 ---------- */
+  const flat = B.parseBackup(JSON.stringify({ holdSpeed: 2, progressBarColor: '#00ff00' }), DEFAULTS);
+  check('B42 兼容没有 data 包裹的扁平格式', flat.ok && flat.settings.holdSpeed === 2 && flat.settings.progressBarColor === '#00ff00');
+  const empty = B.parseBackup('{}', DEFAULTS);
+  check('B43 空对象:成功但 0 项(不报错)', empty.ok === true && Object.keys(empty.settings).length === 0);
+  const evil = B.parseBackup('{"data":{"__proto__":{"polluted":1},"constructor":{"prototype":{"x":1}},"holdSpeed":3}}', DEFAULTS);
+  // ★ 用 hasOwnProperty 而不是 in:'__proto__' / 'constructor' 本来就在原型链上,用 in 会误判成"进了结果"
+  check('B44 原型污染键进不了结果', !Object.prototype.hasOwnProperty.call(evil.settings, '__proto__')
+    && !Object.prototype.hasOwnProperty.call(evil.settings, 'constructor') && evil.settings.holdSpeed === 3);
+  check('B45 Object.prototype 没被污染', ({}).polluted === undefined && ({}).x === undefined);
+  check('B46 未知键被跳过并记账(扁平格式)', evil.skipped.some((s) => s.indexOf('__proto__') === 0));
+
+  /* ---------- 8. 不碰 DOM / storage ---------- */
+  check('B47 本页没有 chrome.storage(证明测的是纯逻辑)', typeof chrome === 'undefined' || !chrome.storage);
+  check('B48 checkKey 可单独调用(自查用)', B.checkKey('progressBarDecorSize', 8, 100).value === 40);
+
+  lines.push('=== ' + pass + '/' + (pass + fail) + ' PASS ===');
+  out.textContent = lines.join('\n');
+})();
+</script>
+</body>
+</html>

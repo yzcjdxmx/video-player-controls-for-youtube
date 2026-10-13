@@ -1,17 +1,24 @@
 {
   "manifest_version": 3,
-  "name": "Video Player Controls for YouTube",
-  "version": "1.4.0",
-  "description": "让 YouTube 网页播放器按哔哩哔哩的操作习惯走:长按方向键临时倍速、Shift 逐帧、Ctrl 跳 10 秒、画面滚轮调音量、常驻进度条、指定默认清晰度。",
+  "name": "__MSG_extensionName__",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "en",
+  "version": "1.5.0",
   "minimum_chrome_version": "111",
-  "permissions": ["storage"],
-  "host_permissions": ["*://www.youtube.com/*", "*://m.youtube.com/*"],
   "homepage_url": "https://github.com/yzcjdxmx/video-player-controls-for-youtube",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "*://www.youtube.com/*",
+    "*://m.youtube.com/*"
+  ],
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
     "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "128": "icons/icon128.png",
+    "300": "icons/icon300.png"
   },
   "action": {
     "default_icon": {
@@ -27,18 +34,30 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://www.youtube.com/*", "*://m.youtube.com/*"],
-      "js": ["content.js", "progress.js", "quality.js"],
-      "css": ["content.css"],
-      "run_at": "document_start",
-      "all_frames": false
+      "matches": [
+        "*://www.youtube.com/*",
+        "*://m.youtube.com/*"
+      ],
+      "js": [
+        "content.js",
+        "progress.js",
+        "quality.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
     },
     {
-      "matches": ["*://www.youtube.com/*", "*://m.youtube.com/*"],
-      "js": ["quality-main.js"],
+      "matches": [
+        "*://www.youtube.com/*",
+        "*://m.youtube.com/*"
+      ],
+      "js": [
+        "quality-main.js"
+      ],
       "world": "MAIN",
-      "run_at": "document_start",
-      "all_frames": false
+      "run_at": "document_idle"
     }
   ],
   "options_ui": {

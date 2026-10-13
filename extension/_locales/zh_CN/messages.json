@@ -1,0 +1,10 @@
+{
+  "extensionName": {
+    "message": "YouTube 播放器增强 · 长按倍速与常驻进度条",
+    "description": "扩展名称:显示在浏览器扩展页与商店列表里"
+  },
+  "extensionDescription": {
+    "message": "让 YouTube 网页播放器按哔哩哔哩的操作习惯走:长按方向键临时倍速、Shift 逐帧、Ctrl 跳 10 秒、画面滚轮调音量、常驻进度条、指定默认清晰度。",
+    "description": "简短描述:显示在浏览器扩展页与商店列表里(商店上限 132 字符)"
+  }
+}

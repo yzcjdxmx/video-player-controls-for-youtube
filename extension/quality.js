@@ -14,7 +14,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.4.0';
+  const VERSION = '1.5.0';
   const TAG = '[仿B站画质]';
 
   const DEFAULTS = { enabled: true, videoQuality: 'auto' };

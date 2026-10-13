@@ -1,0 +1,10 @@
+{
+  "extensionName": {
+    "message": "Video Player Controls for YouTube",
+    "description": "扩展名称:显示在浏览器扩展页与商店列表里"
+  },
+  "extensionDescription": {
+    "message": "Bilibili-style YouTube playback controls: hold to speed up, frame stepping, always-visible progress bar, default quality.",
+    "description": "简短描述:显示在浏览器扩展页与商店列表里(商店上限 132 字符)"
+  }
+}

@@ -234,6 +234,27 @@ window.addEventListener('unhandledrejection', (ev) => {
     } catch (err) {
       check('T15f 设置页顶部有作者信息(GitHub)', false, String(err));
     }
+
+    /* ---- 1.5.0:本地化(i18n)—— 商店靠这些消息引用识别可用语言(T17 段,避免与上面 Ctrl 的 T16 重名) ---- */
+    check('T17a manifest 的名字走 i18n 占位符', m.name === '__MSG_extensionName__', m.name);
+    check('T17b manifest 的描述走 i18n 占位符', m.description === '__MSG_extensionDescription__', m.description);
+    check('T17c 声明了 default_locale = en', m.default_locale === 'en', m.default_locale);
+    for (const loc of ['en', 'zh_CN']) {
+      try {
+        const r = await fetch('../extension/_locales/' + loc + '/messages.json');
+        const j = await r.json();
+        const hasName = !!(j.extensionName && j.extensionName.message);
+        const hasDesc = !!(j.extensionDescription && j.extensionDescription.message);
+        check('T17d.' + loc + ' 语言包含 extensionName + extensionDescription', r.ok && hasName && hasDesc,
+          'HTTP ' + r.status + ' name=' + hasName + ' desc=' + hasDesc);
+        check('T17d.' + loc + ' 简短描述 ≤132 字符(商店上限)', hasDesc && j.extensionDescription.message.length <= 132,
+          hasDesc ? j.extensionDescription.message.length + ' 字符' : '');
+        check('T17d.' + loc + ' 名称 ≤50 字符', hasName && j.extensionName.message.length <= 50,
+          hasName ? j.extensionName.message.length + ' 字符' : '');
+      } catch (err) {
+        check('T17d.' + loc + ' 语言包可读', false, String(err));
+      }
+    }
   } catch (err) {
     check('T13 manifest.json 可读', false, String(err));
   }

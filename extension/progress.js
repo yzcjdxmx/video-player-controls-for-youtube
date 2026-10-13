@@ -15,7 +15,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.4.0';      // 模块版本跟随扩展版本(三个会打日志的模块保持一致)
+  const VERSION = '1.5.0';      // 模块版本跟随扩展版本(三个会打日志的模块保持一致)
   const TAG = '[仿B站进度条]';
 
   const DEFAULTS = {
