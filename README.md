@@ -1,5 +1,7 @@
 ﻿# 🎬 Video Player Controls for YouTube
 
+**中文** ｜ [English](README.en.md)
+
 > 让**网页版 YouTube** 的播放器,按**哔哩哔哩的操作习惯**走 —— 长按方向键临时倍速、`Shift` 逐帧、常驻进度条、可锁定默认清晰度。
 > 纯 Chromium 扩展(Manifest V3),**不联网、不采集数据、只申请 `storage` 一个权限**。
 
