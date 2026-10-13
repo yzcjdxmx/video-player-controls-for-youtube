@@ -32,8 +32,8 @@ click to pause, double-click for fullscreen — are all left untouched.
 
 ## 📥 Install
 
-**Option 1 · Store (recommended, auto-updates)**
-Microsoft Edge Add-ons — *under review; the link will be added here once published.*
+**Option 1 · Store (recommended, auto-updates)** ✅ **live**
+Microsoft Edge Add-ons: <https://microsoftedge.microsoft.com/addons/detail/lipeaalamcjacgahnjgjfafgekfegnmd>
 
 **Option 2 · Load from source (developer mode)**
 1. Download this repository (green `Code` → `Download ZIP`, or `git clone`)

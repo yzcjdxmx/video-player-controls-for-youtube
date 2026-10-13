@@ -30,8 +30,8 @@ YouTube 原生的空格暂停、`↑↓` 音量、`M` 静音、`F` 全屏、`0�
 
 ## 📥 安装
 
-**方式一 · 扩展商店(推荐,能自动更新)**
-Microsoft Edge 加载项商店 —— *上架审核中,通过后这里会补上链接*。
+**方式一 · 扩展商店(推荐,能自动更新)** ✅ **已上架**
+Microsoft Edge 加载项商店:<https://microsoftedge.microsoft.com/addons/detail/lipeaalamcjacgahnjgjfafgekfegnmd>
 
 **方式二 · 从源码加载(开发者模式)**
 1. 下载本仓库(绿色 `Code` → `Download ZIP`,或 `git clone`)
