@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>YouTube 仿哔哩哔哩操作 · 设置</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 14px/1.7 "Microsoft YaHei", system-ui, sans-serif;
+    max-width: 680px; margin: 0 auto; padding: 28px 20px 60px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { opacity: .7; margin: 0 0 24px; }
+  fieldset { border: 1px solid rgba(128,128,128,.35); border-radius: 10px; padding: 14px 18px 18px; margin: 0 0 18px; }
+  legend { padding: 0 6px; font-weight: 700; }
+  .row { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
+  .row label { flex: 1; }
+  .row .hint { display: block; font-size: 12px; opacity: .65; }
+  input[type="number"] { width: 96px; padding: 5px 8px; }
+  select { padding: 5px 8px; min-width: 190px; font: inherit; }
+  button { padding: 8px 18px; border-radius: 8px; border: 1px solid rgba(128,128,128,.5); cursor: pointer; font: inherit; }
+  .bar { position: sticky; bottom: 0; padding: 12px 0; background: canvas; display: flex; gap: 12px; align-items: center; }
+  #status { opacity: .75; }
+  kbd { padding: 1px 6px; border-radius: 5px; border: 1px solid rgba(128,128,128,.5); font: inherit; }
+  .sep { border-top: 1px dashed rgba(128,128,128,.35); margin: 16px 0 4px; }
+</style>
+</head>
+<body>
+  <h1>Video Player Controls for YouTube <span style="font-size:13px;opacity:.6">v1.4.0</span></h1>
+  <p class="sub" style="margin:0 0 6px">让网页版 YouTube 按哔哩哔哩的操作习惯走。改完自动保存,回到 YouTube 标签页立即生效(不用重开页面)。</p>
+  <p class="sub" style="margin:0 0 24px;font-size:12px">
+    作者 <a href="https://github.com/yzcjdxmx" target="_blank" rel="noreferrer noopener">@yzcjdxmx</a>
+    · <a href="https://github.com/yzcjdxmx/video-player-controls-for-youtube" target="_blank" rel="noreferrer noopener">开源仓库 / 提问题</a>
+    · 许可证 MIT · <b>不收集任何数据</b>(设置只存在你自己的浏览器里)
+  </p>
+
+  <fieldset>
+    <legend>长按方向键倍速(<kbd>→</kbd> / <kbd>←</kbd>)</legend>
+    <div class="row">
+      <label>长按时的倍速
+        <span class="hint">B 站默认 3 倍;长按 → 快进、长按 ← 快退,松手恢复原速</span>
+      </label>
+      <input id="holdSpeed" type="number" min="0.5" max="16" step="0.5">
+    </div>
+    <div class="row">
+      <label>长按判定阈值
+        <span class="hint">按住超过这么多毫秒才算“长按”(默认 250)。设太短会把普通短按误判成长按</span>
+      </label>
+      <input id="holdThreshold" type="number" min="60" max="2000" step="10">
+    </div>
+    <div class="row">
+      <label>短按 → / ← 的步长
+        <span class="hint">秒。B 站是 5 秒,YouTube 原生也是 5 秒</span>
+      </label>
+      <input id="shortSeek" type="number" min="1" max="60" step="1">
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>🔥 <kbd>Shift</kbd> / <kbd>Ctrl</kbd> + 方向键</legend>
+    <div class="row">
+      <label>启用 <kbd>Shift</kbd>+<kbd>←</kbd>/<kbd>→</kbd> 逐帧微调
+        <span class="hint">一帧的时长会优先按视频真实帧率自动探测,测不出来才用下面那个值</span>
+      </label>
+      <input id="frameStep" type="checkbox">
+    </div>
+    <div class="row">
+      <label>逐帧时若正在播放,先暂停
+        <span class="hint">建议开:播放状态下移动一帧(约 0.03 秒)肉眼几乎看不出来</span>
+      </label>
+      <input id="frameStepPauses" type="checkbox">
+    </div>
+    <div class="row">
+      <label>备用的帧率(FPS)
+        <span class="hint">自动探测失败时按这个算一帧多长。常见 24 / 25 / 30 / 60</span>
+      </label>
+      <input id="frameStepFps" type="number" min="1" max="240" step="1">
+    </div>
+    <div class="row">
+      <label>启用 <kbd>Ctrl</kbd>+<kbd>←</kbd>/<kbd>→</kbd> 跳转
+        <span class="hint">等于 YouTube 原生的 <kbd>J</kbd> / <kbd>L</kbd>;J/L 本身照旧可用</span>
+      </label>
+      <input id="ctrlArrowSeek" type="checkbox">
+    </div>
+    <div class="row">
+      <label>每次跳多少秒
+        <span class="hint">默认 10(= YouTube 的 J/L)。B 站那套第三方脚本习惯用 30,想统一就填 30</span>
+      </label>
+      <input id="skipSeconds" type="number" min="1" max="300" step="1">
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>📌 视频下沿常驻进度条</legend>
+    <div class="row">
+      <label>启用常驻进度条
+        <span class="hint">贴在画面下沿;鼠标移开、YouTube 原生控制条自动隐藏之后它依然在,点它等于点画面</span>
+      </label>
+      <input id="progressBar" type="checkbox">
+    </div>
+    <div class="row">
+      <label>颜色
+        <span class="hint">默认 #FF0000,就是 YouTube 图标那个红</span>
+      </label>
+      <input id="progressBarColor" type="color">
+    </div>
+    <div class="row">
+      <label>高度(像素)
+        <span class="hint">默认 3,指<b>条身</b>本身;想加粗就调 5–6</span>
+      </label>
+      <input id="progressBarHeight" type="number" min="1" max="20" step="1">
+    </div>
+
+    <div class="sep"></div>
+    <div class="row">
+      <label>首尾刻度(独立开关)
+        <span class="hint">进度条两端各一个记号,当“起点 / 终点”的参照</span>
+      </label>
+      <input id="progressBarCaps" type="checkbox">
+    </div>
+    <div class="row">
+      <label>刻度形状
+        <span class="hint">小三角朝上;方块有实心/空心两种</span>
+      </label>
+      <select id="progressBarCapShape">
+        <option value="line">竖条(默认)</option>
+        <option value="dot">圆点</option>
+        <option value="triangle">小三角</option>
+        <option value="square">小方块 · 实心</option>
+        <option value="squareHollow">小方块 · 空心</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>进度游标(独立开关)
+        <span class="hint">跟着已播放位置走的记号,一眼看出播到哪了</span>
+      </label>
+      <input id="progressBarKnob" type="checkbox">
+    </div>
+    <div class="row">
+      <label>游标形状
+        <span class="hint">默认圆点;和小三角、方块可以随便组合</span>
+      </label>
+      <select id="progressBarKnobShape">
+        <option value="dot">圆点(默认)</option>
+        <option value="line">竖条</option>
+        <option value="triangle">小三角</option>
+        <option value="square">小方块 · 实心</option>
+        <option value="squareHollow">小方块 · 空心</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>刻度 / 游标高度(像素)
+        <span class="hint">默认 8(比 3px 的条身高,所以看得清)。觉得不明显就往上加,可填 2–40</span>
+      </label>
+      <input id="progressBarDecorSize" type="number" min="2" max="40" step="1">
+    </div>
+    <div class="row">
+      <label>鼠标悬停时让位给原生进度条
+        <span class="hint">默认关 = 一直显示。打开后鼠标移到画面上时隐藏,避免两条进度条叠在一起</span>
+      </label>
+      <input id="progressBarHideOnHover" type="checkbox">
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>🎞 默认清晰度</legend>
+    <div class="row">
+      <label>播放时使用
+        <span class="hint">
+          YouTube 默认走「自动」(按网速自适应)。这里可以固定成某一档 —— <b>每个视频开始播放时都会重新设一次</b>。<br>
+          ⚠️ 两点要知道:①选「最高可用」在网速跟不上时会卡顿;②用的是播放器内部接口,YouTube 哪天改了就可能失效(失效时不会报错,只是不生效,控制台会写 <code>[仿B站画质]</code> 日志)。
+        </span>
+      </label>
+      <select id="videoQuality">
+        <option value="auto">保持默认(自动)</option>
+        <option value="highest">最高可用(按视频实际能给的最高)</option>
+        <option value="2160">2160p(4K)</option>
+        <option value="1440">1440p(2K)</option>
+        <option value="1080">1080p</option>
+        <option value="720">720p</option>
+        <option value="480">480p</option>
+        <option value="360">360p</option>
+        <option value="240">240p</option>
+        <option value="144">144p</option>
+      </select>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>开关</legend>
+    <div class="row">
+      <label>启用本扩展
+        <span class="hint">关掉后完全等同于原生 YouTube(进度条、清晰度设置都停)</span>
+      </label>
+      <input id="enabled" type="checkbox">
+    </div>
+    <div class="row">
+      <label>长按 ← 也倍速
+        <span class="hint">B 站的行为;关掉则长按 ← 只当普通快退</span>
+      </label>
+      <input id="longPressLeft" type="checkbox">
+    </div>
+    <div class="row">
+      <label>画面中央浮层提示
+        <span class="hint">长按倍速 / 逐帧 / 跳转 / 调音量时显示 “▶▶ 3.0X” 这样的提示</span>
+      </label>
+      <input id="overlay" type="checkbox">
+    </div>
+    <div class="row">
+      <label>鼠标在画面上滚轮调音量
+        <span class="hint">一格 2%。注意:开启后鼠标停在画面上时,滚轮不会滚动页面</span>
+      </label>
+      <input id="wheelVolume" type="checkbox">
+    </div>
+    <div class="row">
+      <label>[ ] 切换上一集 / 下一集
+        <span class="hint">B 站键位;只在播放列表/合集里有上一集下一集时有效</span>
+      </label>
+      <input id="bracketNav" type="checkbox">
+    </div>
+  </fieldset>
+
+  <div class="bar">
+    <button id="reset" type="button">恢复默认值</button>
+    <span id="status"></span>
+  </div>
+
+<script src="options.js"></script>
+</body>
+</html>

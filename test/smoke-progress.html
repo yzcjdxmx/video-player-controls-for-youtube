@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>smoke test · 常驻进度条(progress.js v1.2.1)</title>
+<!-- ★ 必须把真正交付的样式表也挂上,否则测不到 position/pointer-events 这些样式 -->
+<link rel="stylesheet" href="../extension/content.css">
+<style>
+  #player { position: relative; width: 640px; height: 360px; background: #000; margin: 50px 100px; }
+  #out { white-space: pre-wrap; font: 12px/1.5 Consolas, monospace; }
+</style>
+</head>
+<body>
+  <div id="player"><video width="640" height="360"></video></div>
+  <pre id="out">running…</pre>
+
+<script>
+/* ---- chrome.* 打桩 ---- */
+let onChangedCb = null;
+window.chrome = {
+  storage: {
+    sync: {
+      get: (def, cb) => cb(Object.assign({}, def)),
+      set: (obj, cb) => { if (cb) cb(); }
+    },
+    onChanged: { addListener: (fn) => { onChangedCb = fn; } }
+  }
+};
+
+/* ---- 可变的「视频画面矩形」,用来验证坐标跟随 ---- */
+let videoRect = { left: 100, top: 50, right: 740, bottom: 410, width: 640, height: 360 };
+
+/* ---- 用桩对象替换 <video> ---- */
+const stub = {
+  tagName: 'VIDEO',
+  clientWidth: 640, clientHeight: 360,
+  duration: 600, currentTime: 100,
+  playbackRate: 1, volume: 0.5, muted: false, paused: true,
+  buffered: { length: 1, end: () => 300 },
+  parentElement: document.getElementById('player'),
+  getBoundingClientRect: () => videoRect,
+  pause() { this.paused = true; },
+  play() { this.paused = false; }
+};
+const realQS = Document.prototype.querySelectorAll;
+const withStub = function (sel) { return sel === 'video' ? [stub] : realQS.call(this, sel); };
+Document.prototype.querySelectorAll = withStub;
+
+/* ---- 假的「全屏元素」,用来验证全屏分支 ---- */
+let fsEl = null;
+Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => fsEl });
+</script>
+
+<!-- ---- 加载真正要交付的文件,不做任何改动 ---- -->
+<script src="../extension/progress.js"></script>
+
+<script>
+const out = document.getElementById('out');
+const log = [];
+let pass = 0, total = 0;
+function check(name, ok, extra) {
+  total++;
+  if (ok) pass++;
+  log.push((ok ? 'PASS' : 'FAIL') + ' | ' + name + (extra !== undefined ? ' | ' + extra : ''));
+  out.textContent = log.join('\n');
+  document.title = 'SMOKE-P ' + pass + '/' + total;
+}
+window.onerror = (msg, src, line) => {
+  log.push('JSERROR | ' + msg + ' @' + (src || '').split('/').pop() + ':' + line);
+  out.textContent = log.join('\n');
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const barEl = () => document.querySelector('.bili-yt-progress');
+const playedEl = () => document.querySelector('.bili-yt-progress-played');
+const bufEl = () => document.querySelector('.bili-yt-progress-buffered');
+const isRed = (v) => v === '#ff0000' || v === 'rgb(255, 0, 0)';
+/* 注意:写进去的 "50.000%" 读回来会被浏览器规范化成 "50%",所以按数值比 */
+const pct = (el) => (el ? parseFloat(el.style.width) : NaN);
+const near = (a, b) => Math.abs(a - b) < 0.001;
+const setRect = (o) => { videoRect = Object.assign({}, videoRect, o); };
+
+(async () => {
+ try {
+  await sleep(1200);                                   // 等首次 refresh + 1 秒兜底巡检
+
+  /* ---------------- P1 普通/剧场模式 = fixed 图层 ---------------- */
+  check('P1a 进度条已创建', !!barEl());
+  check('P1b 挂在 body 上(不再挂进播放器容器,免得被 overflow/z-index 吃掉)', !!barEl() && barEl().parentNode === document.body);
+  check('P1c 标记为 data-mode="fixed"', !!barEl() && barEl().getAttribute('data-mode') === 'fixed', barEl() && barEl().getAttribute('data-mode'));
+  check('P1d 坐标 = 视频画面下沿(left 100 / top 407 / width 640)',
+    barEl().style.left === '100px' && barEl().style.top === '407px' && barEl().style.width === '640px',
+    barEl().style.left + ' / ' + barEl().style.top + ' / ' + barEl().style.width);
+  check('P1e computed position = fixed', getComputedStyle(barEl()).position === 'fixed', getComputedStyle(barEl()).position);
+  check('P1f 点击穿透(pointer-events: none)', getComputedStyle(barEl()).pointerEvents === 'none', getComputedStyle(barEl()).pointerEvents);
+  check('P1g 已播放段 = currentTime/duration = 16.667%', near(pct(playedEl()), 16.667), playedEl() && playedEl().style.width);
+  check('P1h 已缓冲段 = buffered/duration = 50%', near(pct(bufEl()), 50), bufEl() && bufEl().style.width);
+  check('P1i 颜色 = YouTube 品牌红', isRed(playedEl().style.background), playedEl().style.background);
+  check('P1j 高度由 CSS 变量控制(默认 3px)', barEl().style.getPropertyValue('--bili-progress-h') === '3px', barEl().style.getPropertyValue('--bili-progress-h'));
+  check('P1k 三段结构齐全(轨道 / 缓冲 / 已播放)', !!bufEl() && !!playedEl());
+  check('P1l 默认一直显示(不因悬停隐藏)', getComputedStyle(barEl()).display !== 'none', getComputedStyle(barEl()).display);
+
+  /* ---------------- P2 坐标跟着视频走 ---------------- */
+  setRect({ left: 260, top: 200, right: 900, bottom: 560 });
+  await sleep(1200);
+  check('P2a 视频位置变了,坐标跟着重算(left 260 / top 557)',
+    barEl().style.left === '260px' && barEl().style.top === '557px',
+    barEl().style.left + ' / ' + barEl().style.top);
+
+  stub.currentTime = 300;
+  await sleep(1200);
+  check('P2b 进度前进后进度条跟着走(50%)', near(pct(playedEl()), 50), playedEl().style.width);
+
+  stub.duration = 1200; stub.currentTime = 300; stub.buffered = { length: 1, end: () => 600 };   // 换视频
+  await sleep(1200);
+  check('P2c 换视频后按新时长重算(25% / 缓冲 50%)',
+    near(pct(playedEl()), 25) && near(pct(bufEl()), 50),
+    playedEl().style.width + ' / ' + bufEl().style.width);
+  check('P2d 暂停状态下照样有进度(不依赖 rAF)', stub.paused === true && near(pct(playedEl()), 25), playedEl().style.width);
+
+  stub.duration = 0;                                   // 直播/时长未知
+  await sleep(1200);
+  check('P2e duration 未知时不乱跳(按 0 处理)', near(pct(playedEl()), 0) && near(pct(bufEl()), 0), playedEl().style.width);
+  stub.duration = 600; stub.currentTime = 100; stub.buffered = { length: 1, end: () => 300 };
+  await sleep(1200);
+
+  /* ---------------- P3 滚出视口 / 尺寸异常 ---------------- */
+  setRect({ left: 260, top: -400, right: 900, bottom: -40 });
+  await sleep(1200);
+  check('P3a 视频滚出视口 → 隐藏(不在页面上乱画一条线)', getComputedStyle(barEl()).display === 'none', getComputedStyle(barEl()).display);
+  setRect({ left: 260, top: 200, right: 900, bottom: 560 });
+  await sleep(1200);
+  check('P3b 视频回到视口 → 又显示', getComputedStyle(barEl()).display === 'block', getComputedStyle(barEl()).display);
+
+  setRect({ right: 260, width: 0 });
+  await sleep(1200);
+  check('P3c 画面尺寸异常(width 0)→ 先藏起来', getComputedStyle(barEl()).display === 'none', getComputedStyle(barEl()).display);
+  setRect({ right: 900, width: 640 });
+  await sleep(1200);
+
+  /* ---------------- P4 全屏分支 ---------------- */
+  fsEl = document.getElementById('player');
+  await sleep(1200);
+  check('P4a 全屏时挂进全屏元素里(固定定位在全屏会被裁)', barEl().parentNode === fsEl, barEl().parentNode && (barEl().parentNode.id || barEl().parentNode.tagName));
+  check('P4b 全屏时不是 fixed,而是贴宿主底边', getComputedStyle(barEl()).position === 'absolute' && getComputedStyle(barEl()).bottom === '0px',
+    getComputedStyle(barEl()).position + ' / bottom:' + getComputedStyle(barEl()).bottom);
+  check('P4c 全屏时清掉固定定位的内联坐标', !barEl().style.left && !barEl().style.top && !barEl().style.width,
+    JSON.stringify({ l: barEl().style.left, t: barEl().style.top, w: barEl().style.width }));
+  check('P4d 全屏时 data-mode 已摘掉', !barEl().hasAttribute('data-mode'));
+  fsEl = null;
+  await sleep(1200);
+  check('P4e 退出全屏 → 回到 body + fixed', barEl().parentNode === document.body && getComputedStyle(barEl()).position === 'fixed',
+    barEl().parentNode.tagName + ' / ' + getComputedStyle(barEl()).position);
+
+  /* ---------------- P5 颜色 / 高度 ---------------- */
+  onChangedCb({ progressBarColor: { newValue: '#ff0033' } }, 'sync');
+  await sleep(1200);
+  check('P5a 自定义颜色立即生效', playedEl().style.background === '#ff0033' || playedEl().style.background === 'rgb(255, 0, 51)', playedEl().style.background);
+  onChangedCb({ progressBarColor: { newValue: 'oops-not-a-color' } }, 'sync');
+  await sleep(1200);
+  check('P5b 非法颜色回落到 YouTube 红', isRed(playedEl().style.background), playedEl().style.background);
+  onChangedCb({ progressBarHeight: { newValue: 6 } }, 'sync');
+  await sleep(1200);
+  check('P5c 改高度生效(6px)', barEl().style.getPropertyValue('--bili-progress-h') === '6px', barEl().style.getPropertyValue('--bili-progress-h'));
+  check('P5d 高度变了坐标也跟着让位(top 554 = 560-6)', barEl().style.top === '554px', barEl().style.top);
+  onChangedCb({ progressBarHeight: { newValue: 99 } }, 'sync');
+  await sleep(1200);
+  check('P5e 离谱的高度被夹到上限 20px', barEl().style.getPropertyValue('--bili-progress-h') === '20px', barEl().style.getPropertyValue('--bili-progress-h'));
+  onChangedCb({ progressBarHeight: { newValue: 3 } }, 'sync');
+
+  /* ---------------- P6 开关 ---------------- */
+  onChangedCb({ progressBar: { newValue: false } }, 'sync');
+  await sleep(1200);
+  check('P6a 关掉进度条开关后被移除', !barEl());
+  onChangedCb({ progressBar: { newValue: true } }, 'sync');
+  await sleep(1200);
+  check('P6b 再打开后自己回来(靠兜底巡检,不用刷新页面)', !!barEl());
+
+  onChangedCb({ enabled: { newValue: false } }, 'sync');
+  await sleep(1200);
+  check('P7a 总开关关掉后也移除', !barEl());
+  onChangedCb({ enabled: { newValue: true }, progressBarColor: { newValue: '#ff0000' } }, 'sync');
+  await sleep(1200);
+  check('P7b 总开关打开后回来', !!barEl());
+
+  /* ---------------- P8 视频消失/重现(SPA 切页) ---------------- */
+  Document.prototype.querySelectorAll = function (sel) { return sel === 'video' ? [] : realQS.call(this, sel); };
+  await sleep(1200);
+  check('P8a 页面上没有 video 时自动移除,不留孤儿节点', !barEl() && !document.querySelector('.bili-yt-progress'));
+  Document.prototype.querySelectorAll = withStub;
+  await sleep(1200);
+  check('P8b 视频出现后自动接回来', !!barEl() && barEl().parentNode === document.body);
+
+  /* ---------------- P9 悬停让位(可选开关) ---------------- */
+  onChangedCb({ progressBarHideOnHover: { newValue: true } }, 'sync');
+  await sleep(1200);
+  check('P9a 打开该开关后,鼠标不在画面上时照样显示', getComputedStyle(barEl()).display !== 'none', getComputedStyle(barEl()).display);
+  onChangedCb({ progressBarHideOnHover: { newValue: false } }, 'sync');
+  await sleep(1200);
+  check('P9b 关掉后仍在显示', getComputedStyle(barEl()).display !== 'none', getComputedStyle(barEl()).display);
+
+  /* ---------------- P10 首尾装饰 + 进度游标 ---------------- */
+  const knob = () => document.querySelector('.bili-yt-progress-knob');
+  const capS = () => document.querySelector('.bili-yt-progress-cap-start');
+  const capE = () => document.querySelector('.bili-yt-progress-cap-end');
+  stub.currentTime = 300; stub.duration = 1200;                       // 25%
+  await sleep(1200);
+  check('P10a 进度游标存在', !!knob());
+  check('P10b 游标位置 = 已播放百分比(25%)', !!knob() && Math.abs(parseFloat(knob().style.left) - 25) < 0.001, knob() && knob().style.left);
+  check('P10c 首尾各有一个刻度', !!capS() && !!capE());
+  check('P10d 左刻度贴左端 / 右刻度贴右端',
+    getComputedStyle(capS()).left === '0px' && getComputedStyle(capE()).right === '0px',
+    getComputedStyle(capS()).left + ' / ' + getComputedStyle(capE()).right);
+  check('P10e 刻度与游标都在进度条内部(会盖在红色进度上)',
+    !!knob() && knob().parentNode === barEl());
+  onChangedCb({ progressBarCaps: { newValue: false } }, 'sync');
+  await sleep(1200);
+  check('P10f 关掉「首尾刻度」后刻度隐藏、游标还在',
+    getComputedStyle(capS()).display === 'none' && getComputedStyle(knob()).display !== 'none',
+    '刻度 ' + getComputedStyle(capS()).display + ' / 游标 ' + getComputedStyle(knob()).display);
+  onChangedCb({ progressBarCaps: { newValue: true }, progressBarKnob: { newValue: false } }, 'sync');
+  await sleep(1200);
+  check('P10g 关掉「进度游标」后游标隐藏、刻度还在',
+    getComputedStyle(knob()).display === 'none' && getComputedStyle(capS()).display !== 'none',
+    '游标 ' + getComputedStyle(knob()).display + ' / 刻度 ' + getComputedStyle(capS()).display);
+  onChangedCb({ progressBarKnob: { newValue: true } }, 'sync');
+  await sleep(1200);
+
+  /* ---------------- P13 形状:小三角 / 实心方块 / 空心方块 ---------------- */
+  const shapeOf = (el) => el.getAttribute('data-shape');
+  check('P13a 默认形状:刻度竖条 / 游标圆点', shapeOf(capS()) === 'line' && shapeOf(knob()) === 'dot',
+    shapeOf(capS()) + ' / ' + shapeOf(knob()));
+
+  onChangedCb({ progressBarKnobShape: { newValue: 'triangle' } }, 'sync');
+  await sleep(1200);
+  check('P13b 游标改小三角:内容宽度 0,靠边框撑出三角形',
+    getComputedStyle(knob()).width === '0px' && getComputedStyle(knob()).borderBottomWidth === '8px',
+    getComputedStyle(knob()).width + ' / 底边 ' + getComputedStyle(knob()).borderBottomWidth);
+
+  onChangedCb({ progressBarKnobShape: { newValue: 'square' } }, 'sync');
+  await sleep(1200);
+  check('P13c 游标改实心方块:8×8、无边框、无圆角',
+    getComputedStyle(knob()).width === '8px' && getComputedStyle(knob()).height === '8px' &&
+    getComputedStyle(knob()).borderTopWidth === '0px' && getComputedStyle(knob()).backgroundColor === 'rgb(255, 255, 255)',
+    getComputedStyle(knob()).width + '×' + getComputedStyle(knob()).height + ' 边框 ' + getComputedStyle(knob()).borderTopWidth);
+
+  onChangedCb({ progressBarKnobShape: { newValue: 'squareHollow' } }, 'sync');
+  await sleep(1200);
+  check('P13d 游标改空心方块:2px 白边 + 内部透明',
+    getComputedStyle(knob()).borderTopWidth === '2px' && getComputedStyle(knob()).backgroundColor === 'rgba(0, 0, 0, 0)',
+    getComputedStyle(knob()).borderTopWidth + ' / ' + getComputedStyle(knob()).backgroundColor);
+
+  onChangedCb({ progressBarKnobShape: { newValue: 'line' } }, 'sync');
+  await sleep(1200);
+  check('P13e 游标也能改成竖条(宽 2px)', getComputedStyle(knob()).width === '2px', getComputedStyle(knob()).width);
+
+  onChangedCb({ progressBarCapShape: { newValue: 'triangle' }, progressBarKnobShape: { newValue: 'dot' } }, 'sync');
+  await sleep(1200);
+  check('P13f 刻度改小三角', shapeOf(capS()) === 'triangle' && getComputedStyle(capS()).width === '0px', shapeOf(capS()));
+  onChangedCb({ progressBarCapShape: { newValue: 'squareHollow' } }, 'sync');
+  await sleep(1200);
+  check('P13g 刻度改空心方块:宽 8px + 2px 边框',
+    getComputedStyle(capS()).width === '8px' && getComputedStyle(capS()).borderTopWidth === '2px',
+    getComputedStyle(capS()).width + ' / ' + getComputedStyle(capS()).borderTopWidth);
+  onChangedCb({ progressBarCapShape: { newValue: 'line' } }, 'sync');
+  await sleep(1200);
+  check('P13h 恢复默认形状(竖条 + 圆点)', shapeOf(capS()) === 'line' && shapeOf(knob()) === 'dot');
+  check('P13i 非法形状值被兜回默认', (function () {
+    onChangedCb({ progressBarKnobShape: { newValue: '别的东西' } }, 'sync');
+    return shapeOf(knob()) === 'dot';
+  })(), shapeOf(knob()));
+
+  /* ---------------- P11 滚动时坐标【同步】更新(不再慢半拍) ---------------- */
+  setRect({ left: 380, top: 120, right: 1020, bottom: 480 });         // 模拟页面滚动后的新位置
+  document.dispatchEvent(new Event('scroll', { bubbles: true }));
+  check('P11a 滚动事件一发出,坐标立刻更新(同帧落位,不用等任何定时器)',
+    barEl().style.left === '380px' && barEl().style.top === '477px',
+    barEl().style.left + ' / ' + barEl().style.top);
+
+  setRect({ left: 400, top: 300, right: 1040, bottom: 660 });
+  document.dispatchEvent(new Event('scroll', { bubbles: true }));
+  check('P11b 连续滚动每次都同步跟上', barEl().style.top === '657px', barEl().style.top);
+
+  setRect({ left: 400, top: -900, right: 1040, bottom: -540 });       // 滚到视口外
+  document.dispatchEvent(new Event('scroll', { bubbles: true }));
+  check('P11c 滚出视口时同步隐藏', getComputedStyle(barEl()).display === 'none', getComputedStyle(barEl()).display);
+  setRect({ left: 400, top: 300, right: 1040, bottom: 660 });
+  document.dispatchEvent(new Event('scroll', { bubbles: true }));
+  check('P11d 滚回来同步显示', getComputedStyle(barEl()).display === 'block', getComputedStyle(barEl()).display);
+
+  /* ---------------- P12 刻度/游标高度可单独设置(1.2.3) ---------------- */
+  const knobW = () => document.querySelector('.bili-yt-progress-knob');
+  const capW = () => document.querySelector('.bili-yt-progress-cap-start');
+  const trackW = () => document.querySelector('.bili-yt-progress-track');
+  stub.currentTime = 300; stub.duration = 1200;                        // 25%
+  await sleep(1200);
+  check('P12a 容器不再裁剪(高一点的装饰才不会被切掉)', getComputedStyle(barEl()).overflow === 'visible', getComputedStyle(barEl()).overflow);
+  check('P12b 条身单独一层,两段都在条身里', !!trackW() && trackW().contains(playedEl()) && trackW().contains(bufEl()));
+  check('P12c 装饰高度变量默认 8px', barEl().style.getPropertyValue('--bili-progress-decor') === '8px', barEl().style.getPropertyValue('--bili-progress-decor'));
+  check('P12d 游标高度 = 8px(比 3px 条身高,所以明显)', getComputedStyle(knobW()).height === '8px', getComputedStyle(knobW()).height);
+  check('P12e 游标是圆点(直径 8px)', getComputedStyle(knobW()).width === '8px' && getComputedStyle(knobW()).borderRadius.indexOf('50%') > -1,
+    getComputedStyle(knobW()).width + ' / ' + getComputedStyle(knobW()).borderRadius);
+  check('P12f 刻度高度也是 8px', getComputedStyle(capW()).height === '8px', getComputedStyle(capW()).height);
+  check('P12g 刻度/游标都在条身底边往上长(不会掉到画面外)', getComputedStyle(capW()).bottom === '0px' && getComputedStyle(knobW()).bottom === '0px',
+    getComputedStyle(capW()).bottom + ' / ' + getComputedStyle(knobW()).bottom);
+  check('P12h 进度 25% 时游标水平居中于该位置', knobW().style.transform === 'translateX(-50%)', knobW().style.transform);
+
+  onChangedCb({ progressBarDecorSize: { newValue: 12 } }, 'sync');
+  await sleep(1200);
+  check('P12i 改装饰高度立即生效(12px),且条身不受影响(仍 3px)',
+    barEl().style.getPropertyValue('--bili-progress-decor') === '12px' && barEl().style.getPropertyValue('--bili-progress-h') === '3px',
+    barEl().style.getPropertyValue('--bili-progress-decor') + ' / 条身 ' + barEl().style.getPropertyValue('--bili-progress-h'));
+
+  onChangedCb({ progressBarDecorSize: { newValue: 99 } }, 'sync');
+  await sleep(1200);
+  check('P12j 离谱的装饰高度被夹到上限 40px', barEl().style.getPropertyValue('--bili-progress-decor') === '40px', barEl().style.getPropertyValue('--bili-progress-decor'));
+
+  onChangedCb({ progressBarDecorSize: { newValue: 8 } }, 'sync');
+  stub.currentTime = 0;
+  await sleep(1200);
+  check('P12k 进度 0% 时游标贴左端,不探出画面', knobW().style.left === '0%' && /^translateX\(0(px)?\)$/.test(knobW().style.transform),
+    knobW().style.left + ' / ' + knobW().style.transform);
+  stub.currentTime = 1200;
+  await sleep(1200);
+  check('P12l 进度 100% 时游标贴右端', knobW().style.left === '100%' && knobW().style.transform === 'translateX(-100%)',
+    knobW().style.left + ' / ' + knobW().style.transform);
+
+  out.textContent = log.join('\n') + '\n=== ' + pass + '/' + total + ' PASS ===\n__END__';
+  document.title = 'SMOKE-P ' + pass + '/' + total;
+ } catch (err) {
+  check('测试脚本自身抛异常', false, String((err && err.stack) || err));
+  log.push('__END__');
+  out.textContent = log.join('\n');
+ }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>刻度 / 游标形状预览(v1.4.0)</title>
+<style>
+  body { margin: 0; padding: 14px 16px 20px; width: 640px; background: #0f0f0f; color: #e8e8e8;
+         font: 14px/1.6 "Microsoft YaHei", system-ui, sans-serif; }
+  .title { font-weight: 700; font-size: 16px; }
+  .sub { color: #9a9a9a; font-size: 12px; margin: 4px 0 12px; }
+  h3 { font-size: 13px; margin: 16px 0 6px; font-weight: 700; }
+  h3 span { font-weight: 400; color: #8f8f8f; }
+  .stage { position: relative; width: 640px; height: 120px; background: #000;
+           border: 1px solid #262626; border-radius: 6px; overflow: hidden; }
+  .stage::after { content: "视频画面"; position: absolute; inset: 0; display: flex;
+                  align-items: center; justify-content: center; color: #1e1e1e; font-size: 20px; }
+  /* ↓↓↓ 以下与扩展 content.css 完全一致(照搬,所见即所得) ↓↓↓ */
+  .bili-yt-progress { position: absolute; left: 0; right: 0; bottom: 0;
+                      height: var(--h, 3px); background: transparent; overflow: visible; }
+  .bili-yt-progress-track { position: absolute; left: 0; right: 0; bottom: 0;
+                            height: var(--h, 3px); background: rgba(255,255,255,.20); overflow: hidden; }
+  .bili-yt-progress-buffered { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255,255,255,.42); }
+  .bili-yt-progress-played { position: absolute; left: 0; top: 0; bottom: 0; background: #ff0000; }
+  .bili-yt-progress-cap { position: absolute; bottom: 0; width: 2px;
+                          height: var(--d, 8px); background: rgba(255,255,255,.95); border-radius: 1px; }
+  .bili-yt-progress-cap-start { left: 0; }
+  .bili-yt-progress-cap-end { right: 0; }
+  .bili-yt-progress-knob { position: absolute; bottom: 0; width: var(--d, 8px);
+                           height: var(--d, 8px); background: #fff; border-radius: 50%; }
+  .bili-yt-progress-cap[data-shape="dot"] { width: var(--d, 8px); background: #fff; border-radius: 50%; }
+  .bili-yt-progress-cap[data-shape="triangle"],
+  .bili-yt-progress-knob[data-shape="triangle"] {
+    width: 0; height: 0; background: none; border-radius: 0;
+    border-left: calc(var(--d, 8px) / 2) solid transparent;
+    border-right: calc(var(--d, 8px) / 2) solid transparent;
+    border-bottom: var(--d, 8px) solid rgba(255,255,255,.95); }
+  .bili-yt-progress-cap[data-shape="square"],
+  .bili-yt-progress-knob[data-shape="square"] {
+    width: var(--d, 8px); height: var(--d, 8px); box-sizing: border-box;
+    background: #fff; border: 0; border-radius: 0; }
+  .bili-yt-progress-cap[data-shape="squareHollow"],
+  .bili-yt-progress-knob[data-shape="squareHollow"] {
+    width: var(--d, 8px); height: var(--d, 8px); box-sizing: border-box;
+    background: transparent; border: 2px solid rgba(255,255,255,.95); border-radius: 0; }
+  .bili-yt-progress-knob[data-shape="line"] { width: 2px; background: #fff; border-radius: 1px; }
+</style>
+</head>
+<body>
+  <div class="title">刻度 / 游标形状预览(v1.4.0)</div>
+  <div class="sub">用的就是扩展里那套 CSS。刻度和游标是两个独立开关 + 各自独立形状;下面是几种组合,装饰高度都按 8px(可在设置里改)。</div>
+
+  <h3>① 竖条刻度 + 圆点游标 <span>—— ★ 默认</span></h3>
+  <div class="stage" style="--h:3px; --d:8px">
+    <div class="bili-yt-progress">
+      <div class="bili-yt-progress-track">
+        <div class="bili-yt-progress-buffered"></div>
+        <div class="bili-yt-progress-played"></div>
+      </div>
+      <div class="bili-yt-progress-cap bili-yt-progress-cap-start" data-shape="line"></div>
+      <div class="bili-yt-progress-cap bili-yt-progress-cap-end" data-shape="line"></div>
+      <div class="bili-yt-progress-knob" data-shape="dot"></div>
+    </div>
+  </div>
+
+  <h3>② 小三角刻度 + 小三角游标 <span>—— 三角尖朝上,像两个小旗子</span></h3>
+  <div class="stage" style="--h:3px; --d:8px">
+    <div class="bili-yt-progress">
+      <div class="bili-yt-progress-track">
+        <div class="bili-yt-progress-buffered"></div>
+        <div class="bili-yt-progress-played"></div>
+      </div>
+      <div class="bili-yt-progress-cap bili-yt-progress-cap-start" data-shape="triangle"></div>
+      <div class="bili-yt-progress-cap bili-yt-progress-cap-end" data-shape="triangle"></div>
+      <div class="bili-yt-progress-knob" data-shape="triangle"></div>
+    </div>
+  </div>
+
+  <h3>③ 空心方块刻度 + 空心方块游标</h3>
+  <div class="stage" style="--h:3px; --d:8px">
+    <div class="bili-yt-progress">
+      <div class="bili-yt-progress-track">
+        <div class="bili-yt-progress-buffered"></div>
+        <div class="bili-yt-progress-played"></div>
+      </div>
+      <div class="bili-yt-progress-cap bili-yt-progress-cap-start" data-shape="squareHollow"></div>
+      <div class="bili-yt-progress-cap bili-yt-progress-cap-end" data-shape="squareHollow"></div>
+      <div class="bili-yt-progress-knob" data-shape="squareHollow"></div>
+    </div>
+  </div>
+
+  <h3>④ 实心方块刻度 + 小三角游标 <span>—— 两种形状可以混着用</span></h3>
+  <div class="stage" style="--h:3px; --d:8px">
+    <div class="bili-yt-progress">
+      <div class="bili-yt-progress-track">
+        <div class="bili-yt-progress-buffered"></div>
+        <div class="bili-yt-progress-played"></div>
+      </div>
+      <div class="bili-yt-progress-cap bili-yt-progress-cap-start" data-shape="square"></div>
+      <div class="bili-yt-progress-cap bili-yt-progress-cap-end" data-shape="square"></div>
+      <div class="bili-yt-progress-knob" data-shape="triangle"></div>
+    </div>
+  </div>
+
+  <h3>⑤ 圆点刻度 + 实心方块游标 <span>—— 装饰高度 12px 的大号版</span></h3>
+  <div class="stage" style="--h:3px; --d:12px">
+    <div class="bili-yt-progress">
+      <div class="bili-yt-progress-track">
+        <div class="bili-yt-progress-buffered"></div>
+        <div class="bili-yt-progress-played"></div>
+      </div>
+      <div class="bili-yt-progress-cap bili-yt-progress-cap-start" data-shape="dot"></div>
+      <div class="bili-yt-progress-cap bili-yt-progress-cap-end" data-shape="dot"></div>
+      <div class="bili-yt-progress-knob" data-shape="square"></div>
+    </div>
+  </div>
+
+<script>
+  const stages = Array.prototype.slice.call(document.querySelectorAll('.stage'));
+  function tick(t) {
+    const p = (t / 12000) % 1;
+    const q = Math.min(1, p + 0.16);
+    stages.forEach(function (s) {
+      const bar = s.querySelector('.bili-yt-progress');
+      bar.querySelector('.bili-yt-progress-played').style.width = (p * 100).toFixed(3) + '%';
+      bar.querySelector('.bili-yt-progress-buffered').style.width = (q * 100).toFixed(3) + '%';
+      const knob = bar.querySelector('.bili-yt-progress-knob');
+      if (knob) {
+        knob.style.left = (p * 100).toFixed(3) + '%';
+        knob.style.transform = p <= 0.004 ? 'translateX(0)' : (p >= 0.996 ? 'translateX(-100%)' : 'translateX(-50%)');
+      }
+    });
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+</script>
+</body>
+</html>

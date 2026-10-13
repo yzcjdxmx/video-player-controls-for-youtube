@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>截图用:播放器示意</title>
+<!-- ★ 引的是扩展真正在用的 content.css:进度条和浮层的观感就是真货 -->
+<link rel="stylesheet" href="content.css">
+<style>
+  /* ------------------------------------------------------------------
+     这一整段只是「YouTube 播放页」的假背景板,跟扩展样式无关。
+     --h = 进度条条身高度,--d = 刻度/游标高度(和扩展设置页里的两个值对应)
+     ------------------------------------------------------------------ */
+  :root { --h: 3px; --d: 8px; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1280px; height: 800px; overflow: hidden; background: #0f0f0f; color: #f1f1f1;
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; -webkit-font-smoothing: antialiased;
+  }
+  .top { height: 56px; display: flex; align-items: center; gap: 18px; padding: 0 22px; }
+  .burger { width: 22px; display: flex; flex-direction: column; gap: 4px; }
+  .burger i { height: 2px; background: #f1f1f1; border-radius: 2px; }
+  .logo { font-size: 19px; font-weight: 700; letter-spacing: -.4px; }
+  .logo em { font-style: normal; color: #ff0033; }
+  .pill { flex: 0 0 400px; height: 38px; border: 1px solid #2f2f2f; border-radius: 19px; background: #121212;
+          display: flex; align-items: center; justify-content: flex-end; padding-right: 14px; color: #6d6d6d; font-size: 14px; }
+  .spacer { flex: 1; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; background: #4d4d4d; }
+
+  .main { display: flex; gap: 24px; padding: 6px 24px 0; }
+  .left { width: 850px; flex: 0 0 850px; }
+  .player {
+    position: relative; width: 850px; height: 478px; border-radius: 12px; overflow: hidden;
+    background: radial-gradient(130% 130% at 28% 18%, #33333c 0%, #14141a 55%, #0a0a0c 100%);
+  }
+  /* 假的「画面内容」:几条抽象色块,不涉及任何品牌图形 */
+  .scene { position: absolute; inset: 0; opacity: .5; }
+  .scene span { position: absolute; border-radius: 50%; filter: blur(40px); }
+  .scene span:nth-child(1) { width: 380px; height: 380px; left: 60px;  top: 40px;  background: #3b6ea5; }
+  .scene span:nth-child(2) { width: 300px; height: 300px; left: 420px; top: 180px; background: #7a4a86; }
+  .scene span:nth-child(3) { width: 240px; height: 240px; left: 260px; top: 240px; background: #2f6f5e; }
+
+  /* ★★ 关键:真页面里进度条是按「窗口」贴底的(position:fixed,由 JS 给坐标),
+        截图里要让它老实待在假播放器的下沿 → 覆盖成相对播放器绝对定位。★★ */
+  .player .bili-yt-progress {
+    position: absolute !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+    top: auto !important; height: var(--h, 3px);
+  }
+  /* 真页面上浮层相对窗口居中,fixed 是 !important,这里压过它让它在播放器正中 */
+  .player .bili-yt-hint {
+    position: absolute !important; left: 50% !important; top: 50% !important;
+    right: auto !important; bottom: auto !important; transform: translate(-50%, -50%);
+    font-size: 40px !important; letter-spacing: 2px;
+  }
+
+  .vtitle { font-size: 20px; font-weight: 700; line-height: 28px; margin: 14px 0 14px; color: #f1f1f1; }
+  .meta { display: flex; align-items: center; gap: 12px; }
+  .ch-avatar { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(140deg, #5b5b66, #3a3a44); }
+  .ch { flex: 1; }
+  .ch b { display: block; font-size: 15px; font-weight: 600; }
+  .ch span { display: block; font-size: 12.5px; color: #a0a0a0; margin-top: 2px; }
+  .btn { height: 36px; border-radius: 18px; background: #272727; display: flex; align-items: center;
+         justify-content: center; gap: 6px; font-size: 14px; color: #f1f1f1; padding: 0 16px; }
+  .btn.sub { background: #f1f1f1; color: #0f0f0f; font-weight: 600; }
+
+  .caps { margin-top: 22px; display: flex; flex-direction: column; gap: 10px; }
+  .cap { display: flex; align-items: center; gap: 10px; font-size: 15.5px; color: #d7d7d7; }
+  .cap b { color: #fff; font-weight: 600; }
+  .cap i { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 9px; }
+  .cap.gold i { background: #ffd75e; } .cap.red i { background: #ff0000; } .cap.blue i { background: #7fd1ff; }
+  kbd {
+    display: inline-block; min-width: 22px; padding: 2px 7px; border-radius: 5px; background: #272727;
+    border: 1px solid #3c3c3c; border-bottom-width: 2px; font-family: inherit; font-size: 14px; color: #fff;
+  }
+  .live { font-size: 12.5px; color: #868686; margin-top: 16px; letter-spacing: .3px; }
+
+  .right { width: 358px; display: flex; flex-direction: column; gap: 12px; }
+  .card { display: flex; gap: 10px; }
+  .thumb { flex: 0 0 158px; height: 89px; border-radius: 9px; background: linear-gradient(140deg, #2b2b31, #191920); position: relative; }
+  .thumb::after { content: '12:04'; position: absolute; right: 6px; bottom: 6px; font-size: 11.5px;
+                  background: rgba(0,0,0,.75); border-radius: 4px; padding: 1px 5px; color: #fff; }
+  .lines { flex: 1; padding-top: 2px; }
+  .lines b { display: block; font-size: 13.5px; font-weight: 600; line-height: 18px; color: #f1f1f1; }
+  .lines b + b { margin-top: 4px; }
+  .lines span { display: block; font-size: 12px; color: #a0a0a0; margin-top: 6px; }
+</style>
+</head>
+<body>
+
+  <div class="top">
+    <div class="burger"><i></i><i></i><i></i></div>
+    <div class="logo">You<em>Tube</em></div>
+    <div class="pill">搜索</div>
+    <div class="spacer"></div>
+    <div class="avatar"></div>
+  </div>
+
+  <div class="main">
+    <div class="left">
+      <div class="player">
+        <div class="scene"><span></span><span></span><span></span></div>
+
+        <!-- ↓↓↓ 进度条:结构 / 类名 / 样式全部来自 extension/content.css ↓↓↓ -->
+        <div class="bili-yt-progress" style="left:0; right:0; bottom:0;">
+          <div class="bili-yt-progress-track">
+            <div class="bili-yt-progress-buffered" style="width:76%"></div>
+            <div class="bili-yt-progress-played" style="width:53%"></div>
+          </div>
+          <span class="bili-yt-progress-cap bili-yt-progress-cap-start" data-shape="bar"></span>
+          <span class="bili-yt-progress-cap bili-yt-progress-cap-end" data-shape="bar"></span>
+          <span class="bili-yt-progress-knob" data-shape="dot" style="left:calc(53% - 4px)"></span>
+        </div>
+
+        <!-- ↓↓↓ 长按快进时的中央浮层(B 站那种金色) ↓↓↓ -->
+        <div class="bili-yt-hint bili-yt-fast bili-yt-show">▶▶ 3.0X</div>
+      </div>
+
+      <div class="vtitle">示例视频 · 演示:长按方向键倍速 + 画面下沿常驻进度条</div>
+      <div class="meta">
+        <div class="ch-avatar"></div>
+        <div class="ch"><b>示例频道</b><span>1.2 万位订阅者</span></div>
+        <div class="btn sub">订阅</div>
+        <div class="btn">👍 3.4 万</div>
+        <div class="btn">分享</div>
+      </div>
+
+      <div class="caps">
+        <div class="cap gold"><i></i><span><b>长按 <kbd>→</kbd> / <kbd>←</kbd></b>:临时 3 倍速快进 / 快退,松手回原速</span></div>
+        <div class="cap red"><i></i><span><b>画面下沿常驻进度条</b>:两端刻度 + 当前进度游标,鼠标移开、原生控制条隐藏后依然显示</span></div>
+        <div class="cap blue"><i></i><span><kbd>Shift</kbd>+<kbd>←</kbd>/<kbd>→</kbd> 逐帧 · <kbd>Ctrl</kbd>+<kbd>←</kbd>/<kbd>→</kbd> 跳 10 秒 · 画面滚轮调音量 · <kbd>[</kbd> <kbd>]</kbd> 切集</span></div>
+      </div>
+      <div class="live">示意图:进度条与中央浮层使用扩展真实样式(content.css)渲染,页面其余部分为占位</div>
+    </div>
+
+    <div class="right">
+      <div class="card"><div class="thumb"></div><div class="lines"><b>相关推荐视频标题一</b><b>占位,示意右侧列表</b><span>示例频道 · 观看 8.1 万次</span></div></div>
+      <div class="card"><div class="thumb"></div><div class="lines"><b>相关推荐视频标题二</b><b>占位,示意右侧列表</b><span>示例频道 · 观看 2.6 万次</span></div></div>
+      <div class="card"><div class="thumb"></div><div class="lines"><b>相关推荐视频标题三</b><b>占位,示意右侧列表</b><span>示例频道 · 观看 15 万次</span></div></div>
+      <div class="card"><div class="thumb"></div><div class="lines"><b>相关推荐视频标题四</b><b>占位,示意右侧列表</b><span>示例频道 · 观看 4.9 万次</span></div></div>
+      <div class="card"><div class="thumb"></div><div class="lines"><b>相关推荐视频标题五</b><b>占位,示意右侧列表</b><span>示例频道 · 观看 1.1 万次</span></div></div>
+    </div>
+  </div>
+
+</body>
+</html>

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>bench · 扩展每帧/每秒开销(真实计时)</title>
+<style>#out { white-space: pre-wrap; font: 12px/1.6 Consolas, monospace; }</style>
+</head>
+<body>
+  <div id="movie_player"><div class="html5-video-container"><video width="640" height="360"></video></div></div>
+  <pre id="out">running…</pre>
+
+<script>
+/* ------------------------------------------------------------------
+   这个页面【不用虚拟时间】跑,所以 performance.now() 是真实墙钟 → 测的是真 CPU 时间。
+   做法:先造一个和 YouTube 播放页同一量级的 DOM(~15000 元素),再把扩展每秒真正
+   要做的那几种操作逐个计时,最后按“每秒发生多少次”折算成 CPU 百分比。
+   ------------------------------------------------------------------ */
+
+/* 1) 造量级接近 YouTube 播放页的 DOM */
+const N = 15000;
+const frag = document.createDocumentFragment();
+for (let i = 0; i < N; i++) {
+  const d = document.createElement('div');
+  d.className = 'fake-node n' + (i % 50);
+  d.setAttribute('data-x', String(i));
+  frag.appendChild(d);
+}
+document.body.appendChild(frag);
+
+const v = document.querySelector('video');
+const player = document.getElementById('movie_player');
+const bar = document.createElement('div');
+bar.style.cssText = 'position:fixed;left:0;top:0;width:100px;height:3px';
+const trackFill = document.createElement('div');
+trackFill.style.cssText = 'position:absolute;left:0;top:0;bottom:0;width:0';
+bar.appendChild(trackFill);
+document.body.appendChild(bar);
+
+function bench(name, fn, times) {
+  for (let i = 0; i < Math.min(50, times); i++) fn(i);          // 预热
+  const t0 = performance.now();
+  for (let i = 0; i < times; i++) fn(i);
+  const t1 = performance.now();
+  return { name, us: (t1 - t0) / times * 1000, times };
+}
+
+const rows = [];
+/* 扩展「每帧」干的事:2 次 style.width 写入 + 每 90ms 一次矩形读取(这里按每帧都读算,偏保守) */
+rows.push(bench('每帧:2 次写 width + 1 次 getBoundingClientRect', (i) => {
+  trackFill.style.width = (i % 1000) / 10 + '%';
+  bar.style.width = (i % 1000) / 10 + '%';
+  return v.getBoundingClientRect();
+}, 2000));
+/* 扩展「每秒巡检」干的事:1 次 querySelectorAll('video') + 选最大 + 几次样式写 + 矩形读 */
+rows.push(bench('每秒巡检:querySelectorAll + 样式写 + 读矩形', (i) => {
+  const vids = document.querySelectorAll('video');
+  let best = vids[0], area = -1;
+  for (const x of vids) { const a = (x.clientWidth || 0) * (x.clientHeight || 0); if (a > area) { area = a; best = x; } }
+  bar.style.setProperty('--bili-progress-h', '3px');
+  trackFill.style.width = (i % 1000) / 10 + '%';
+  return best.getBoundingClientRect();
+}, 2000));
+/* 滚轮事件:快路径(closest 判断)= 鼠标不在画面上时唯一要做的事 */
+rows.push(bench('滚轮(鼠标不在画面上):1 次 closest', (i) => {
+  const div = document.createElement('div');
+  return div.closest('video, #movie_player, .html5-video-player, ytd-player');
+}, 5000));
+/* 滚轮事件:慢路径(鼠标在画面上,调音量,旧写法)*/
+rows.push(bench('滚轮(鼠标在画面上):查 video + 查播放器 + 算矩形', (i) => {
+  const x = document.querySelectorAll('video')[0];
+  const p = document.querySelector('#movie_player');
+  return x.getBoundingClientRect() && p.getBoundingClientRect();
+}, 2000));
+/* 按键事件(空格/方向键等,每次按键一次;用来对比“按键逻辑”的开销)*/
+rows.push(bench('按键 keydown:getVideo + 读一次属性', (i) => {
+  const x = document.querySelectorAll('video')[0];
+  return x.currentTime;
+}, 5000));
+
+const frame = rows[0].us;
+const refresh = rows[1].us;
+const wheelFast = rows[2].us;
+const wheelSlow = rows[3].us;
+const key = rows[4].us;
+
+const playing = 60 * frame + refresh;                    // 播放中:60 帧 + 1 次/秒巡检
+const paused = refresh;                                  // 暂停:只有 1 次/秒巡检
+const scroling = 50 * wheelFast + refresh;               // 滚动整页(鼠标不在画面上):50 个滚轮事件/秒
+
+const fmt = (x) => x.toFixed(2);
+const pct = (us) => (us / 10000).toFixed(4);             // 1 核 = 1e6 µs/s
+
+let out = '';
+out += '【单项开销】(真实墙钟计时,DOM ~' + N + ' 个元素)\n';
+for (const r of rows) out += '  ' + r.name.padEnd(46, ' ') + fmt(r.us).padStart(8) + ' µs/次  (n=' + r.times + ')\n';
+out += '\n【折算成每秒 CPU】(1 个 CPU 核 = 1,000,000 µs/秒)\n';
+out += '  播放中  (60 帧/秒)      : ' + fmt(playing).padStart(9) + ' µs/秒  ≈ 占单核 ' + pct(playing) + ' %\n';
+out += '  暂停/后台    (1 次/秒)    : ' + fmt(paused).padStart(9) + ' µs/秒  ≈ 占单核 ' + pct(paused) + ' %\n';
+out += '  滚整页(鼠标不在画面上)  : ' + fmt(scroling).padStart(9) + ' µs/秒  ≈ 占单核 ' + pct(scroling) + ' %\n';
+out += '  ← 对比:鼠标在画面上滚轮调音量 1 次 = ' + fmt(wheelSlow) + ' µs(只在鼠标停在画面上时才发生)\n';
+out += '  ← 对比:每次按键 = ' + fmt(key) + ' µs(只在按键时发生,空闲时按键逻辑完全零开销)\n';
+out += '\n【内存/体积】\n';
+out += '  扩展注入的 DOM 节点 : 3 个(进度条 + 2 个内部条),页面里几乎看不见\n';
+if (performance.memory) {
+  out += '  本页 JS 堆(不含扩展隔离世界): ' + (performance.memory.usedJSHeapSize / 1048576).toFixed(1) + ' MB\n';
+}
+out += '  扩展代码体积        : content.js + progress.js ≈ 23 KB 源码(浏览器会缓存编译结果)\n';
+
+document.getElementById('out').textContent = out;
+document.title = 'BENCH done';
+</script>
+</body>
+</html>

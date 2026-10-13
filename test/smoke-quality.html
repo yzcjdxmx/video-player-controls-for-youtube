@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>smoke test · 默认清晰度(隔离世界 + 主世界 两半,端到端)</title>
+<style>#out { white-space: pre-wrap; font: 12px/1.5 Consolas, monospace; }
+       #movie_player { width: 640px; height: 360px; background: #000; }</style>
+</head>
+<body>
+  <div id="movie_player"><video width="640" height="360"></video></div>
+  <pre id="out">running…</pre>
+
+<script>
+/* ---- chrome.* 打桩(隔离世界那一半用) ---- */
+let onChangedCb = null;
+window.chrome = {
+  storage: {
+    sync: { get: (def, cb) => cb(Object.assign({}, def)), set: (o, cb) => { if (cb) cb(); } },
+    onChanged: { addListener: (fn) => { onChangedCb = fn; } }
+  }
+};
+
+/* ---- 给 #movie_player 装上 YouTube 的播放器接口,记录每一次调用 ---- */
+const calls = [];                  // ['range', a, b] / ['single', q]
+let levels = ['hd2160', 'hd1440', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny', 'auto'];
+const player = document.getElementById('movie_player');
+player.getAvailableQualityLevels = () => levels.slice();
+player.setPlaybackQualityRange = (a, b) => calls.push(['range', a, b]);
+player.setPlaybackQuality = (q) => calls.push(['single', q]);
+const video = document.querySelector('video');
+
+/* ---- 顺手记录隔离世界发过来的消息,验证协议 ---- */
+const msgs = [];
+window.addEventListener('message', (e) => {
+  const d = e.data;
+  if (d && typeof d === 'object' && d.__biliYtQuality === 1) msgs.push(String(d.desired));
+});
+</script>
+
+<!-- ---- 两半都按交付原样加载。在这里它们都跑在同一个世界,
+         但 quality-main.js 在真实扩展里由 manifest 声明 world:"MAIN" ---- -->
+<script src="../extension/quality.js"></script>
+<script src="../extension/quality-main.js"></script>
+
+<script>
+const out = document.getElementById('out');
+const log = [];
+let pass = 0, total = 0;
+function check(name, ok, extra) {
+  total++;
+  if (ok) pass++;
+  log.push((ok ? 'PASS' : 'FAIL') + ' | ' + name + (extra !== undefined ? ' | ' + extra : ''));
+  out.textContent = log.join('\n');
+  document.title = 'SMOKE-Q ' + pass + '/' + total;
+}
+window.onerror = (msg, src, line) => {
+  log.push('JSERROR | ' + msg + ' @' + (src || '').split('/').pop() + ':' + line);
+  out.textContent = log.join('\n');
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const fire = (type) => video.dispatchEvent(new Event(type, { bubbles: true }));
+const last = () => (calls.length ? calls[calls.length - 1] : null);
+const reset = () => { calls.length = 0; };
+const setQ = (v) => { onChangedCb({ videoQuality: { newValue: v } }, 'sync'); };
+const forced = () => calls.filter((c) => c[0] === 'range' && c[1] !== 'auto');
+
+(async () => {
+ try {
+  await sleep(1500);                                  // 等设置载入(0ms + 600ms 补发)那一梭子
+
+  /* ---------------- Q1 默认「保持默认」= 一个接口都不碰 ---------------- */
+  check('Q1a 默认(auto)时不强制任何清晰度', forced().length === 0, JSON.stringify(calls));
+  check('Q1b 隔离世界确实把设置发过来了(desired = 空)', msgs.length > 0 && msgs[msgs.length - 1] === '', JSON.stringify(msgs));
+
+  /* ---------------- Q2 指定 1080p:跨世界链路 + 重复补设 ---------------- */
+  reset();
+  setQ('1080');
+  await sleep(6000);
+  check('Q2a 请求了 1080p(hd1080)', last() && last()[0] === 'range' && last()[1] === 'hd1080', JSON.stringify(last()));
+  check('Q2b 最低/最高一起锁(双参写法)', last() && last()[1] === last()[2], JSON.stringify(last()));
+  check('Q2c 会重复补设(YouTube 自适应可能改回去)', forced().length >= 3, 'forced=' + forced().length);
+
+  /* ---------------- Q3 最高可用 ---------------- */
+  reset();
+  setQ('highest');
+  await sleep(6000);
+  check('Q3a 最高可用 = 列表里最高那档(hd2160)', last() && last()[1] === 'hd2160', JSON.stringify(last()));
+
+  /* ---------------- Q4 目标档位这个视频没有 → 退到不高于它的最高 ---------------- */
+  levels = ['hd720', 'large', 'medium', 'small', 'tiny', 'auto'];
+  reset();
+  setQ('1080');
+  await sleep(6000);
+  check('Q4a 要 1080 但视频只有 720 → 退到 720', last() && last()[1] === 'hd720', JSON.stringify(last()));
+  reset();
+  setQ('240');
+  await sleep(6000);
+  check('Q4b 要 240 时选到 small(240p)', last() && last()[1] === 'small', JSON.stringify(last()));
+
+  /* ---------------- Q5 拿不到列表 → 直接按目标请求 ---------------- */
+  levels = [];
+  reset();
+  setQ('360');
+  await sleep(6000);
+  check('Q5 拿不到可用列表时直接请求 medium(360p)', last() && last()[1] === 'medium', JSON.stringify(last()));
+
+  /* ---------------- Q6 没有 range 接口 → 退回旧单参接口 ---------------- */
+  levels = ['hd1080', 'hd720', 'auto'];
+  delete player.setPlaybackQualityRange;
+  reset();
+  setQ('720');
+  await sleep(6000);
+  check('Q6a 没有 range 接口时退回 setPlaybackQuality(单参)', last() && last()[0] === 'single' && last()[1] === 'hd720', JSON.stringify(last()));
+  check('Q6b 这时不会再有 range 调用', calls.every((c) => c[0] === 'single'), JSON.stringify(calls));
+
+  /* ---------------- Q7 两个接口都没有 → 安全收场 ---------------- */
+  delete player.setPlaybackQuality;
+  reset();
+  setQ('480');
+  await sleep(6000);
+  check('Q7 两个接口都没有时不抛异常、不乱调', calls.length === 0, JSON.stringify(calls));
+
+  /* ---------------- Q8 总开关关掉 → 放开清晰度、不再强制 ---------------- */
+  player.setPlaybackQualityRange = (a, b) => calls.push(['range', a, b]);
+  reset();
+  setQ('1080');
+  await sleep(6000);
+  check('Q8a 重新能用后又能设上', forced().length >= 1, 'forced=' + forced().length);
+  reset();
+  onChangedCb({ enabled: { newValue: false } }, 'sync');
+  await sleep(3000);
+  check('Q8b 关掉总开关后放开清晰度(range auto/auto)', last() && last()[0] === 'range' && last()[1] === 'auto' && last()[2] === 'auto', JSON.stringify(last()));
+  check('Q8c 关掉后不再强制任何档位', forced().length === 0, JSON.stringify(calls));
+  onChangedCb({ enabled: { newValue: true } }, 'sync');
+  await sleep(6000);
+
+  /* ---------------- Q9 主世界自己也会在换视频时补设(不依赖新消息) ---------------- */
+  reset();
+  fire('loadedmetadata');
+  await sleep(6000);
+  check('Q9a 新视频(loadedmetadata)会重新设一遍', forced().length >= 3, 'forced=' + forced().length);
+
+  /* ---------------- Q10 切回「保持默认」→ 交回自动 ---------------- */
+  levels = ['hd2160', 'hd1440', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny', 'auto'];   // 恢复完整列表(Q6 改过)
+  reset();
+  setQ('144');
+  await sleep(6000);
+  check('Q10a 指定 144p 时请求 tiny', last() && last()[1] === 'tiny', JSON.stringify(last()));
+  reset();
+  setQ('auto');
+  await sleep(3000);
+  check('Q10b 切回「保持默认」时交回自动', last() && last()[1] === 'auto', JSON.stringify(last()));
+  check('Q10c 切回后不再强制', forced().length === 0, JSON.stringify(calls));
+
+  /* ---------------- Q11 消息协议:非法值被主世界丢弃 ---------------- */
+  reset();
+  window.postMessage({ __biliYtQuality: 1, desired: '<scr' + 'ipt>坏值</scr' + 'ipt>' }, '*');
+  await sleep(1000);
+  check('Q11 非白名单的 desired 被丢弃', forced().length === 0, JSON.stringify(calls));
+
+  /* ---------------- Q12 manifest:主世界那半真的声明了 world: MAIN ---------------- */
+  try {
+    const m = await (await fetch('../extension/manifest.json')).json();
+    const main = m.content_scripts.filter((c) => c.world === 'MAIN');
+    check('Q12a manifest 里有 world:"MAIN" 的注入项', main.length === 1, JSON.stringify(m.content_scripts.map((c) => c.world || 'ISOLATED')));
+    check('Q12b 主世界注入的是 quality-main.js', main.length === 1 && JSON.stringify(main[0].js) === '["quality-main.js"]', main.length ? JSON.stringify(main[0].js) : '');
+    check('Q12c 隔离世界那半仍在普通 content_scripts 里', JSON.stringify(m.content_scripts[0].js) === '["content.js","progress.js","quality.js"]');
+  } catch (err) {
+    check('Q12 manifest 可读', false, String(err));
+  }
+
+  /* ---------------- Q13 去重:已在目标档位就不再重复设 + 版本号一致性 ---------------- */
+  const versionOf = async (f) => {
+    try {
+      const t = await (await fetch('../extension/' + f)).text();
+      const m = t.match(/const VERSION = '([^']+)'/);
+      return m ? m[1] : '';
+    } catch (err) { return ''; }
+  };
+  let mv = '';
+  try { mv = (await (await fetch('../extension/manifest.json')).json()).version; } catch (err) {}
+  const vq = await versionOf('quality.js');
+  const vqm = await versionOf('quality-main.js');
+  const vp = await versionOf('progress.js');
+  check('Q13a 三个模块的 VERSION 常量和 manifest 版本一致(防漏改)',
+    mv !== '' && vq === mv && vqm === mv && vp === mv,
+    'manifest=' + mv + ' quality=' + vq + ' main=' + vqm + ' progress=' + vp);
+
+  /* 让桩模拟「YouTube 真的把清晰度切过去了」:set 之后 getPlaybackQuality 能读到 */
+  let curQuality = 'auto';
+  player.getPlaybackQuality = () => curQuality;
+  player.setPlaybackQualityRange = (a, b) => { calls.push(['range', a, b]); curQuality = a; };
+  player.setPlaybackQuality = (q) => { calls.push(['single', q]); curQuality = q; };
+  levels = ['hd2160', 'hd1440', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny', 'auto'];
+
+  reset();
+  setQ('1080');
+  await sleep(6000);
+  check('Q13b 已经切到目标档位后,那 4 次重试被跳过(只设一次)', forced().length === 1, 'forced=' + forced().length);
+
+  curQuality = 'auto';                                 // 假装 YouTube 又改回自动
+  reset();
+  fire('loadedmetadata');
+  await sleep(6000);
+  check('Q13c 档位被改回去后会重新设上', forced().length >= 1, 'forced=' + forced().length);
+  check('Q13d 重新设上后档位确实变成 hd1080', curQuality === 'hd1080', curQuality);
+
+  out.textContent = log.join('\n') + '\n=== ' + pass + '/' + total + ' PASS ===\n__END__';
+  document.title = 'SMOKE-Q ' + pass + '/' + total;
+ } catch (err) {
+  check('测试脚本自身抛异常', false, String((err && err.stack) || err));
+  log.push('__END__');
+  out.textContent = log.join('\n');
+ }
+})();
+</script>
+</body>
+</html>

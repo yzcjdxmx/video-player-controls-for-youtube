@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>smoke test · 15-YouTube仿B站操作</title>
+<style>
+  #movie_player { position: relative; width: 640px; height: 360px; background: #000; }
+  #out { white-space: pre-wrap; font: 12px/1.5 Consolas, monospace; }
+</style>
+</head>
+<body>
+  <div id="movie_player">
+    <video id="realvideo" width="640" height="360"></video>
+    <button class="ytp-prev-button">prev</button>
+    <button class="ytp-next-button">next</button>
+  </div>
+  <input id="searchbox" type="text">
+  <div role="menu"><span id="menuitem">menu item</span></div>
+  <pre id="out">running…</pre>
+
+<script>
+/* ---- 1. 最小的 chrome.* 打桩(只实现本扩展用到的两个 API) ---- */
+let onChangedCb = null;
+window.chrome = {
+  storage: {
+    sync: {
+      get: (def, cb) => cb(Object.assign({}, def)),
+      set: (obj, cb) => { if (cb) cb(); }
+    },
+    onChanged: { addListener: (fn) => { onChangedCb = fn; } }
+  }
+};
+
+/* ---- 2. 用桩对象替换 <video>:无媒体源时 currentTime / playbackRate 读不回来 ---- */
+const stub = {
+  clientWidth: 640, clientHeight: 360,
+  playbackRate: 1, currentTime: 100, duration: 600,
+  volume: 0.5, muted: false,
+  paused: true,
+  pause() { this.paused = true; },
+  play() { this.paused = false; }
+};
+const realQS = Document.prototype.querySelectorAll;
+Document.prototype.querySelectorAll = function (sel) {
+  return sel === 'video' ? [stub] : realQS.call(this, sel);
+};
+</script>
+
+<!-- ---- 3. 加载“真正要交付的那个文件”,不做任何改动 ---- -->
+<script src="../extension/content.js"></script>
+
+<script>
+const out = document.getElementById('out');
+const log = [];
+let pass = 0, total = 0;
+function check(name, ok, extra) {
+  total++;
+  if (ok) pass++;
+  log.push((ok ? 'PASS' : 'FAIL') + ' | ' + name + (extra !== undefined ? ' | ' + extra : ''));
+  out.textContent = log.join('\n');            // 每步都刷新,方便无头模式观察进度
+  document.title = 'SMOKE ' + pass + '/' + total;
+}
+window.onerror = (msg, src, line) => {
+  log.push('JSERROR | ' + msg + ' @' + (src || '').split('/').pop() + ':' + line);
+  out.textContent = log.join('\n');
+};
+const kd = (key, opts = {}, target) => {
+  const e = new KeyboardEvent('keydown', Object.assign({ key, bubbles: true, cancelable: true }, opts));
+  (target || document.body).dispatchEvent(e);
+  return e;
+};
+const ku = (key, target) => {
+  const e = new KeyboardEvent('keyup', { key, bubbles: true, cancelable: true });
+  (target || document.body).dispatchEvent(e);
+  return e;
+};
+const wheel = (dx, dy, x, y) => {
+  const e = new WheelEvent('wheel', { deltaX: dx, deltaY: dy, clientX: x, clientY: y, bubbles: true, cancelable: true });
+  (document.elementFromPoint(x, y) || document.body).dispatchEvent(e);
+  return e;
+};
+const hint = () => document.querySelector('.bili-yt-hint');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+window.addEventListener('unhandledrejection', (ev) => {
+  log.push('REJECT | ' + (ev.reason && ev.reason.stack ? ev.reason.stack : String(ev.reason)));
+  out.textContent = log.join('\n');
+});
+
+(async () => {
+ try {
+  await sleep(50);
+  const v = stub;
+
+  /* ---------------- T1 长按 → = 3 倍速 ---------------- */
+  const e1 = kd('ArrowRight');
+  check('T1a 长按 → 立即拦截 YouTube 原生跳转(keydown 就被吃掉)', e1.defaultPrevented === true);
+  check('T1b 阈值内还没加速', v.playbackRate === 1, 'rate=' + v.playbackRate);
+  await sleep(400);
+  check('T1c 按住 400ms 后进入 3 倍速', v.playbackRate === 3, 'rate=' + v.playbackRate);
+  const h1 = hint();
+  check('T1d 中央浮层文案 = "▶▶ 3.0X"', !!h1 && h1.textContent === '▶▶ 3.0X', h1 && h1.textContent);
+  check('T1e 浮层挂在 #movie_player 里(全屏也能看见)', !!h1 && h1.parentNode && h1.parentNode.id === 'movie_player');
+  check('T1f 浮层处于显示态', !!h1 && h1.className.indexOf('bili-yt-show') > -1, h1 && h1.className);
+  ku('ArrowRight');
+  check('T1g 松手恢复原速', v.playbackRate === 1, 'rate=' + v.playbackRate);
+
+  /* ---------------- T2 短按 → = 5 秒,不改倍速 ---------------- */
+  v.currentTime = 100;
+  kd('ArrowRight');
+  await sleep(50);
+  ku('ArrowRight');
+  check('T2a 短按 → 快进 5 秒(B 站步长)', Math.abs(v.currentTime - 105) < 0.001, 't=' + v.currentTime);
+  check('T2b 短按不改倍速', v.playbackRate === 1);
+
+  /* ---------------- T3 短按 ← ---------------- */
+  v.currentTime = 100;
+  kd('ArrowLeft');
+  await sleep(50);
+  ku('ArrowLeft');
+  check('T3a 短按 ← 快退 5 秒', Math.abs(v.currentTime - 95) < 0.001, 't=' + v.currentTime);
+  check('T3b 快退到 0 以下会被夹住', (() => { v.currentTime = 2; kd('ArrowLeft'); ku('ArrowLeft'); return v.currentTime === 0; })(), 't=' + v.currentTime);
+
+  /* ---------------- T4 长按 ← = 3 倍速 ---------------- */
+  v.currentTime = 100;
+  kd('ArrowLeft');
+  await sleep(400);
+  check('T4a 长按 ← 也进入 3 倍速(B 站行为)', v.playbackRate === 3, 'rate=' + v.playbackRate);
+  const h4 = hint();
+  check('T4b 浮层文案 = "◀◀ 3.0X"', !!h4 && h4.textContent === '◀◀ 3.0X', h4 && h4.textContent);
+  ku('ArrowLeft');
+  check('T4c 松手恢复原速', v.playbackRate === 1);
+
+  /* ---------------- T5 输入框里打字不被劫持 ---------------- */
+  const box = document.getElementById('searchbox');
+  const e5 = kd('ArrowRight', {}, box);
+  await sleep(350);
+  check('T5a 搜索框里按 → 不拦截', e5.defaultPrevented === false);
+  check('T5b 搜索框里按 → 不加速', v.playbackRate === 1, 'rate=' + v.playbackRate);
+  ku('ArrowRight', box);
+
+  /* ---------------- T6 播放器菜单打开时不被劫持 ---------------- */
+  const mi = document.getElementById('menuitem');
+  const e6 = kd('ArrowRight', {}, mi);
+  await sleep(350);
+  check('T6a 设置菜单里按 → 不拦截', e6.defaultPrevented === false);
+  check('T6b 设置菜单里按 → 不加速', v.playbackRate === 1);
+  ku('ArrowRight', mi);
+
+  /* ---------------- T7 按住期间的重复事件 ---------------- */
+  kd('ArrowRight');
+  await sleep(400);
+  const e7 = kd('ArrowRight', { repeat: true });
+  const e7b = ku('ArrowRight');
+  check('T7a 长按期间的 repeat 事件继续被拦截(不会跳 5 秒)', e7.defaultPrevented === true);
+  check('T7b keyup 也被吃掉,恢复原速', e7b.defaultPrevented === true && v.playbackRate === 1);
+
+  /* ---------------- T8 其它组合键不碰 ---------------- */
+  const e8 = kd('ArrowRight', { ctrlKey: true, shiftKey: true });
+  const e8b = kd('k', { ctrlKey: true });
+  await sleep(350);
+  check('T8a Ctrl+Shift+→ 完全不管', e8.defaultPrevented === false && v.playbackRate === 1);
+  check('T8b Ctrl+K 这类非方向键组合键不管', e8b.defaultPrevented === false);
+  ku('ArrowRight');
+
+  /* ---------------- T9 画面滚轮调音量 ---------------- */
+  v.volume = 0.5;
+  const e9 = wheel(0, -100, 100, 100);            // 画面内向上滚
+  check('T9a 画面内滚轮被拦截(不滚页面)', e9.defaultPrevented === true);
+  check('T9b 音量 +2%', Math.abs(v.volume - 0.52) < 1e-9, 'vol=' + v.volume);
+  const h9 = hint();
+  check('T9c 浮层显示音量百分比', !!h9 && h9.textContent === '🔊 52%', h9 && h9.textContent);
+  const e9b = wheel(0, 100, 100, 100);
+  check('T9d 向下滚 = 减音量', e9b.defaultPrevented === true && Math.abs(v.volume - 0.5) < 1e-9, 'vol=' + v.volume);
+
+  /* ---------------- T10 画面外滚轮不管 ---------------- */
+  const e10 = wheel(0, -100, 780, 560);
+  check('T10a 画面外滚轮不拦截页面', e10.defaultPrevented === false, 'vol=' + v.volume);
+  check('T10b 画面外滚轮不改音量', Math.abs(v.volume - 0.5) < 1e-9);
+
+  /* ---------------- T11 [ ] 切换集数 ---------------- */
+  let nextClicks = 0, prevClicks = 0;
+  document.querySelector('.ytp-next-button').addEventListener('click', () => nextClicks++);
+  document.querySelector('.ytp-prev-button').addEventListener('click', () => prevClicks++);
+  const e11 = kd(']');
+  let h11 = hint();
+  check('T11a ] = 下一集(点了 next 按钮)', nextClicks === 1, 'clicks=' + nextClicks);
+  check('T11b ] 被拦截', e11.defaultPrevented === true);
+  check('T11c ] 浮层文案 = "⏭ 下一集"', !!h11 && h11.textContent === '⏭ 下一集', h11 && h11.textContent);
+  kd('[');
+  h11 = hint();
+  check('T11d [ = 上一集', prevClicks === 1 && !!h11 && h11.textContent === '⏮ 上一集', 'prev=' + prevClicks + ' hint=' + (h11 && h11.textContent));
+
+  /* ---------------- T12 设置能实时生效 ---------------- */
+  if (onChangedCb) {
+    await sleep(1200);                                   // 等 T11 的浮层自己淡出,取基线
+    check('T12pre 浮层已复位(基线)', hint().className.indexOf('bili-yt-show') === -1, hint().className);
+    onChangedCb({ overlay: { newValue: false }, holdSpeed: { newValue: 1.5 } }, 'sync');
+    kd('ArrowRight');
+    await sleep(400);
+    const h12 = hint();
+    check('T12a 关掉浮层后不再显示提示', !h12 || h12.className.indexOf('bili-yt-show') === -1, h12 && h12.className);
+    check('T12b 改倍速立即生效(1.5x)', v.playbackRate === 1.5, 'rate=' + v.playbackRate);
+    ku('ArrowRight');
+    check('T12c 松手恢复原速', v.playbackRate === 1);
+    onChangedCb({ overlay: { newValue: true }, holdSpeed: { newValue: 3 } }, 'sync');
+  } else {
+    check('T12 设置监听已注册', false, 'chrome.storage.onChanged 没有拿到回调');
+  }
+
+  /* ---------------- T13 交付的 manifest 能被解析 ---------------- */
+  try {
+    const m = await (await fetch('../extension/manifest.json')).json();
+    check('T13a manifest.json 是合法 JSON', true);
+    check('T13b manifest_version = 3', m.manifest_version === 3);
+    check('T13c 注入了 content.js + progress.js + quality.js / content.css',
+      JSON.stringify(m.content_scripts[0].js) === '["content.js","progress.js","quality.js"]' &&
+      JSON.stringify(m.content_scripts[0].css) === '["content.css"]');
+    check('T13d 匹配 youtube.com', m.content_scripts[0].matches.some((s) => s.indexOf('youtube.com') > -1));
+    check('T13e 只要 storage 权限(无网络权限)', JSON.stringify(m.permissions) === '["storage"]');
+    check('T15a 名字里不含版本号(上架要求)', !/[0-9]+\.[0-9]+\.[0-9]+/.test(m.name), m.name);
+    check('T15b 声明了 4 个尺寸的图标', !!m.icons && !!m.icons['16'] && !!m.icons['32'] && !!m.icons['48'] && !!m.icons['128'], JSON.stringify(m.icons));
+    check('T15c 有工具栏按钮 + 后台脚本(点图标开设置)', !!m.action && !!m.background && m.background.service_worker === 'background.js',
+      JSON.stringify({ action: !!m.action, background: m.background }));
+    check('T15d 开源仓库地址写在 manifest 里(homepage_url)', String(m.homepage_url || '').indexOf('github.com/yzcjdxmx') > -1, String(m.homepage_url || ''));
+    try {
+      const ir = await fetch('../extension/' + m.icons['128']);
+      check('T15e 128 尺寸图标文件真的存在', ir.ok, 'status=' + ir.status);
+    } catch (err) {
+      check('T15e 128 尺寸图标文件真的存在', false, String(err));
+    }
+    try {
+      const oh = await (await fetch('../extension/options.html')).text();
+      check('T15f 设置页顶部有作者信息(GitHub)', oh.indexOf('github.com/yzcjdxmx') > -1);
+    } catch (err) {
+      check('T15f 设置页顶部有作者信息(GitHub)', false, String(err));
+    }
+  } catch (err) {
+    check('T13 manifest.json 可读', false, String(err));
+  }
+
+  /* ---------------- T14 Shift+←/→ 逐帧微调 ---------------- */
+  v.paused = true;
+  v.currentTime = 100;
+  const e14 = kd('ArrowRight', { shiftKey: true });
+  check('T14a Shift+→ 被拦截', e14.defaultPrevented === true);
+  check('T14b 前进一帧(测不到真实帧率时按 30fps = 1/30 秒)', Math.abs(v.currentTime - (100 + 1 / 30)) < 1e-9, 't=' + v.currentTime);
+  const h14 = hint();
+  check('T14c 浮层文案 = "⏭ 1 帧"', !!h14 && h14.textContent === '⏭ 1 帧', h14 && h14.textContent);
+  const e14b = kd('ArrowLeft', { shiftKey: true });
+  check('T14d Shift+← 后退一帧', e14b.defaultPrevented === true && Math.abs(v.currentTime - 100) < 1e-9, 't=' + v.currentTime);
+
+  /* ---------------- T15 逐帧时正在播放会先暂停 ---------------- */
+  v.paused = false;                                   // 假装正在播放
+  v.currentTime = 200;
+  kd('ArrowRight', { shiftKey: true });
+  check('T15a 播放中逐帧会先暂停(否则那一帧肉眼看不出来)', v.paused === true);
+  check('T15b 暂停后照样前进一帧', Math.abs(v.currentTime - (200 + 1 / 30)) < 1e-9, 't=' + v.currentTime);
+
+  /* ---------------- T16 Ctrl+←/→ 跳 10 秒(映射 J/L) ---------------- */
+  v.currentTime = 100;
+  const e16 = kd('ArrowRight', { ctrlKey: true });
+  check('T16a Ctrl+→ 被拦截', e16.defaultPrevented === true);
+  check('T16b Ctrl+→ = 前进 10 秒(等于 YouTube 的 L)', Math.abs(v.currentTime - 110) < 1e-9, 't=' + v.currentTime);
+  const h16 = hint();
+  check('T16c 浮层文案 = "▶▶ 10s"', !!h16 && h16.textContent === '▶▶ 10s', h16 && h16.textContent);
+  kd('ArrowLeft', { ctrlKey: true });
+  check('T16d Ctrl+← = 后退 10 秒(等于 YouTube 的 J)', Math.abs(v.currentTime - 100) < 1e-9, 't=' + v.currentTime);
+  const beforeJump = v.currentTime;
+  const e16b = kd('ArrowRight', { ctrlKey: true, repeat: true });
+  check('T16e 按住 Ctrl+→ 不连跳(和 J/L 行为一致)', e16b.defaultPrevented === false && v.currentTime === beforeJump, 't=' + v.currentTime);
+
+  /* ---------------- T17 输入框里这些组合键也不劫持 ---------------- */
+  const e17 = kd('ArrowRight', { shiftKey: true }, box);
+  const e17b = kd('ArrowRight', { ctrlKey: true }, box);
+  await sleep(60);
+  check('T17a 搜索框里 Shift+→ 不劫持', e17.defaultPrevented === false);
+  check('T17b 搜索框里 Ctrl+→ 不劫持', e17b.defaultPrevented === false);
+  check('T17c 搜索框里时间没被改动', v.currentTime === beforeJump, 't=' + v.currentTime);
+
+  /* ---------------- T18 这两条都能在设置里关掉 ---------------- */
+  if (onChangedCb) {
+    onChangedCb({ frameStep: { newValue: false }, ctrlArrowSeek: { newValue: false } }, 'sync');
+    v.currentTime = 300;
+    const e18 = kd('ArrowRight', { shiftKey: true });
+    const e18b = kd('ArrowRight', { ctrlKey: true });
+    check('T18a 关掉后 Shift+→ 放行给 YouTube', e18.defaultPrevented === false && v.currentTime === 300, 't=' + v.currentTime);
+    check('T18b 关掉后 Ctrl+→ 放行给 YouTube', e18b.defaultPrevented === false && v.currentTime === 300, 't=' + v.currentTime);
+    onChangedCb({ frameStep: { newValue: true }, ctrlArrowSeek: { newValue: true } }, 'sync');
+  } else {
+    check('T18 设置监听已注册', false, 'chrome.storage.onChanged 没拿到回调');
+  }
+
+  out.textContent = log.join('\n') + '\n=== ' + pass + '/' + total + ' PASS ===\n__END__';
+  document.title = 'SMOKE ' + pass + '/' + total;
+ } catch (err) {
+  check('测试脚本自身抛异常', false, String((err && err.stack) || err));
+  log.push('__END__');
+  out.textContent = log.join('\n');
+ }
+})();
+</script>
+</body>
+</html>

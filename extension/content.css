@@ -1,0 +1,169 @@
+/* ==================================================================
+   ① 中央浮层(content.js):倍速 / 音量 / 跳转 / 逐帧提示
+   ================================================================== */
+.bili-yt-hint {
+  position: fixed !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 2147483000 !important;
+  display: none;
+  padding: 10px 24px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.68);
+  color: #fff;
+  font: 700 26px/1.25 "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  pointer-events: none !important;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.bili-yt-hint.bili-yt-show { display: block; opacity: 1; }
+
+.bili-yt-hint.bili-yt-fast { color: #ffd75e; }   /* 快进:金色,和 B 站一样醒目 */
+.bili-yt-hint.bili-yt-slow { color: #7fd1ff; }   /* 快退:蓝色 */
+.bili-yt-hint.bili-yt-vol,
+.bili-yt-hint.bili-yt-nav,
+.bili-yt-hint.bili-yt-seek,
+.bili-yt-hint.bili-yt-jump,
+.bili-yt-hint.bili-yt-frame { font-size: 20px; }
+
+/* ==================================================================
+   ② 常驻进度条(progress.js)
+   结构:
+     容器 .bili-yt-progress          ← 只负责摆位,【故意不裁剪】
+       ├─ .bili-yt-progress-track   ← 条身本体(负责裁剪内部两段)
+       │    ├─ -buffered            ← 已缓冲
+       │    └─ -played              ← 已播放(红)
+       ├─ -cap-start / -cap-end     ← 首尾刻度(形状由 data-shape 决定)
+       └─ -knob                     ← 进度游标(形状由 data-shape 决定)
+   两个高度各管一段:
+     --bili-progress-h     条身高度(默认 3px)
+     --bili-progress-decor 刻度/游标高度(默认 8px,可单独设)
+   装饰都从画面下沿往上长(bottom:0),所以只往上长、不会掉到画面外,全屏也不怕被裁。
+   形状:line 竖条 / dot 圆点 / triangle 小三角 / square 实心方块 / squareHollow 空心方块
+   ================================================================== */
+.bili-yt-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--bili-progress-h, 3px);
+  background: transparent;            /* 底色在 track 上,容器保持透明好让装饰外露 */
+  overflow: visible;                  /* ★ 不能裁剪,否则高一点的刻度/游标会被切掉 */
+  z-index: 2147483000 !important;
+  pointer-events: none !important;    /* 点上去穿透到画面,不影响播放/暂停 */
+}
+
+.bili-yt-progress[data-mode="fixed"] {
+  position: fixed;
+  left: auto;
+  right: auto;
+  bottom: auto;
+}
+
+/* 条身:底色 + 两段(自己裁剪,免得半像素溢出) */
+.bili-yt-progress-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--bili-progress-h, 3px);
+  background: rgba(255, 255, 255, 0.20);
+  overflow: hidden;
+}
+
+.bili-yt-progress-buffered {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 0;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.bili-yt-progress-played {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 0;
+  background: #ff0000;               /* YouTube 品牌红,实际颜色由设置覆盖 */
+}
+
+/* ---------------- 首尾刻度 ---------------- */
+.bili-yt-progress-cap {
+  position: absolute;
+  bottom: 0;
+  width: 2px;                                  /* 默认 = 竖条 */
+  height: var(--bili-progress-decor, 8px);
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 1px;
+}
+.bili-yt-progress-cap-start { left: 0; }
+.bili-yt-progress-cap-end { right: 0; }
+
+/* ---------------- 进度游标 ---------------- */
+.bili-yt-progress-knob {
+  position: absolute;
+  bottom: 0;
+  width: var(--bili-progress-decor, 8px);       /* 默认 = 圆点 */
+  height: var(--bili-progress-decor, 8px);
+  background: #ffffff;
+  border-radius: 50%;
+}
+
+/* ================= 形状(刻度和游标各自可选) =================
+   line         竖条(刻度默认)
+   dot          圆点(游标默认)
+   triangle     小三角(向上;宽度靠左右透明边框撑出来)
+   square       实心方块
+   squareHollow 空心方块(2px 白边,内部透明)
+   ============================================================ */
+
+/* 刻度:圆点 */
+.bili-yt-progress-cap[data-shape="dot"] {
+  width: var(--bili-progress-decor, 8px);
+  background: #ffffff;
+  border-radius: 50%;
+}
+
+/* 刻度 / 游标:小三角 */
+.bili-yt-progress-cap[data-shape="triangle"],
+.bili-yt-progress-knob[data-shape="triangle"] {
+  width: 0;
+  height: 0;
+  background: none;
+  border-left: calc(var(--bili-progress-decor, 8px) / 2) solid transparent;
+  border-right: calc(var(--bili-progress-decor, 8px) / 2) solid transparent;
+  border-bottom: var(--bili-progress-decor, 8px) solid rgba(255, 255, 255, 0.95);
+  border-radius: 0;
+}
+
+/* 刻度 / 游标:实心方块 */
+.bili-yt-progress-cap[data-shape="square"],
+.bili-yt-progress-knob[data-shape="square"] {
+  width: var(--bili-progress-decor, 8px);
+  height: var(--bili-progress-decor, 8px);
+  box-sizing: border-box;
+  background: #ffffff;
+  border: 0;
+  border-radius: 0;
+}
+
+/* 刻度 / 游标:空心方块 */
+.bili-yt-progress-cap[data-shape="squareHollow"],
+.bili-yt-progress-knob[data-shape="squareHollow"] {
+  width: var(--bili-progress-decor, 8px);
+  height: var(--bili-progress-decor, 8px);
+  box-sizing: border-box;
+  background: transparent;
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  border-radius: 0;
+}
+
+/* 游标:竖条 */
+.bili-yt-progress-knob[data-shape="line"] {
+  width: 2px;
+  background: #ffffff;
+  border-radius: 1px;
+}
