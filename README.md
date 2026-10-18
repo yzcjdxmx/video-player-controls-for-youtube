@@ -10,6 +10,21 @@
 [![No network](https://img.shields.io/badge/network-none-success.svg)](PRIVACY.md)
 [![Tests](https://img.shields.io/badge/tests-217%20passing-brightgreen.svg)](#-测试)
 
+![Video Player Controls for YouTube](screenshots/00-banner.png)
+
+## 📸 截图
+
+<p align="center">
+  <img src="screenshots/01-player-hint-and-progress-bar.png" width="49%" alt="长按方向键临时 3 倍速 + 画面下沿常驻进度条">
+  <img src="screenshots/02-settings-top.png" width="49%" alt="设置页:23 项设置">
+</p>
+<p align="center">
+  <img src="screenshots/03-cap-knob-shapes.png" width="49%" alt="刻度与游标的五种形状">
+  <img src="screenshots/04-settings-backup.png" width="49%" alt="设置备份与恢复(导出 / 导入 .json)">
+</p>
+
+> 截图用扩展**真实样式**渲染(第一张的播放页背景为占位,图上已注明「示意图」);点图可看大图。
+
 ---
 
 ## ✨ 它做什么

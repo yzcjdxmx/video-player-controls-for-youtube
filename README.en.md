@@ -11,6 +11,22 @@
 [![No network](https://img.shields.io/badge/network-none-success.svg)](PRIVACY.md)
 [![Tests](https://img.shields.io/badge/tests-217%20passing-brightgreen.svg)](#-tests)
 
+![Video Player Controls for YouTube](screenshots/00-banner.png)
+
+## 📸 Screenshots
+
+<p align="center">
+  <img src="screenshots/01-player-hint-and-progress-bar.png" width="49%" alt="Hold an arrow key for temporary 3x speed, plus the always-visible progress bar">
+  <img src="screenshots/02-settings-top.png" width="49%" alt="Settings page: 23 options">
+</p>
+<p align="center">
+  <img src="screenshots/03-cap-knob-shapes.png" width="49%" alt="Five cap and playhead shapes">
+  <img src="screenshots/04-settings-backup.png" width="49%" alt="Settings backup and restore (export / import .json)">
+</p>
+
+> Screenshots are rendered with the extension's **real stylesheet** (the player background in the first
+> image is a mock placeholder, marked in the image). Click an image to open it full size.
+
 ---
 
 ## ✨ What it does
