@@ -10,7 +10,7 @@
 [![No network](https://img.shields.io/badge/network-none-success.svg)](PRIVACY.md)
 [![Tests](https://img.shields.io/badge/tests-217%20passing-brightgreen.svg)](#-测试)
 
-![Video Player Controls for YouTube](screenshots/00-banner.png)
+![YouTube 播放器增强 · 长按倍速与常驻进度条](screenshots/00-banner-zh.png)
 
 ## 📸 截图
 
